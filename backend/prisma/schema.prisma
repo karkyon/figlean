@@ -1,0 +1,647 @@
+// =====================================
+// FIGLEAN - Complete Database Schema
+// Figma Design Quality Analysis Platform
+// Version: 2.0
+// 作成日: 2026年1月10日
+// =====================================
+// 
+// 設計方針:
+// - Frontend/Backend仕様書に基づく完全なデータモデル
+// - Figma診断・スコアリング・HTML生成の全機能対応
+// - ルールエンジン、改善提案、崩壊予測の永続化
+// - 将来のAI機能拡張に対応
+// =====================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================
+// エニュメーション定義
+// =====================================
+
+/// ユーザーロール
+enum UserRole {
+  FREE     // 無料プラン（診断のみ）
+  PRO      // Proプラン（HTML生成）
+  TEAM     // Teamプラン（Figmaコメント・共有）
+  ADMIN    // 管理者
+
+  @@map("user_role")
+}
+
+/// 診断ステータス
+enum AnalysisStatus {
+  PENDING      // 待機中
+  IN_PROGRESS  // 解析中
+  COMPLETED    // 完了
+  FAILED       // 失敗
+
+  @@map("analysis_status")
+}
+
+/// ルール違反の重要度
+enum Severity {
+  CRITICAL  // 致命的（HTML生成不可）
+  MAJOR     // 重大（品質低下）
+  MINOR     // 軽微（推奨改善）
+
+  @@map("severity")
+}
+
+/// ルールカテゴリ
+enum RuleCategory {
+  LAYOUT       // Auto Layout構造
+  COMPONENT    // Component設計
+  RESPONSIVE   // レスポンシブ対応
+  SEMANTIC     // 命名規則
+  CONSTRAINT   // サイズ制約
+  STRUCTURE    // 階層構造
+
+  @@map("rule_category")
+}
+
+/// HTML生成フレームワーク
+enum Framework {
+  HTML_TAILWIND    // HTML + Tailwind CSS
+  REACT_JSX        // React Component (JSX)
+  VUE_SFC          // Vue Component (SFC)
+
+  @@map("framework")
+}
+
+/// HTML生成ステータス
+enum GenerationStatus {
+  NOT_GENERATED  // 未生成
+  GENERATING     // 生成中
+  COMPLETED      // 完了
+  FAILED         // 失敗
+
+  @@map("generation_status")
+}
+
+// =====================================
+// ユーザー管理
+// =====================================
+
+/// ユーザーテーブル
+model User {
+  id                String    @id @default(uuid()) @db.Uuid
+  username          String    @unique @db.VarChar(100)
+  email             String    @unique @db.VarChar(255)
+  passwordHash      String    @map("password_hash")
+  name              String?   @db.VarChar(255)
+  role              UserRole  @default(FREE)
+  
+  // Figma連携
+  figmaAccessToken  String?   @map("figma_access_token") @db.Text
+  figmaUserId       String?   @map("figma_user_id") @db.VarChar(255)
+  
+  // プラン情報
+  planExpiredAt     DateTime? @map("plan_expired_at") @db.Timestamptz(6)
+  
+  // アカウント状態
+  isActive          Boolean   @default(true) @map("is_active")
+  emailVerifiedAt   DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  lastLoginAt       DateTime? @map("last_login_at") @db.Timestamptz(6)
+  
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // リレーション
+  projects          Project[]
+  generatedHtmls    GeneratedHtml[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+// =====================================
+// プロジェクト・診断管理
+// =====================================
+
+/// プロジェクトテーブル
+model Project {
+  id                 String         @id @default(uuid()) @db.Uuid
+  userId             String         @map("user_id") @db.Uuid
+  name               String         @db.VarChar(255)
+  description        String?        @db.Text
+  
+  // Figma情報
+  figmaFileKey       String         @map("figma_file_key") @db.VarChar(255)
+  figmaFileUrl       String?        @map("figma_file_url") @db.Text
+  figmaFileName      String?        @map("figma_file_name") @db.VarChar(255)
+  figmaNodeId        String?        @map("figma_node_id") @db.VarChar(255)
+  
+  // スコア（最新診断結果のキャッシュ）
+  figleanScore       Int?           @map("figlean_score")
+  layoutScore        Int?           @map("layout_score")
+  componentScore     Int?           @map("component_score")
+  responsiveScore    Int?           @map("responsive_score")
+  semanticScore      Int?           @map("semantic_score")
+  
+  // 診断状態
+  analysisStatus     AnalysisStatus @default(PENDING) @map("analysis_status")
+  lastAnalyzedAt     DateTime?      @map("last_analyzed_at") @db.Timestamptz(6)
+  analysisCount      Int            @default(0) @map("analysis_count")
+  
+  // HTML生成可否
+  htmlGeneratable    Boolean        @default(false) @map("html_generatable")
+  
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // リレーション
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysisResults    AnalysisResult[]
+  violations         RuleViolation[]
+  predictions        BreakPrediction[]
+  suggestions        ImprovementSuggestion[]
+  generatedHtmls     GeneratedHtml[]
+
+  @@index([userId])
+  @@index([analysisStatus])
+  @@index([figmaFileKey])
+  @@index([figleanScore])
+  @@map("projects")
+}
+
+/// 診断結果テーブル
+model AnalysisResult {
+  id                    String   @id @default(uuid()) @db.Uuid
+  projectId             String   @map("project_id") @db.Uuid
+  
+  // 総合スコア
+  figleanScore          Int      @map("figlean_score")
+  
+  // カテゴリ別スコア
+  layoutScore           Int      @map("layout_score")
+  componentScore        Int      @map("component_score")
+  responsiveScore       Int      @map("responsive_score")
+  semanticScore         Int      @map("semantic_score")
+  
+  // Tailwind最適化スコア
+  tailwindOptScore      Int?     @map("tailwind_opt_score")
+  unnecessaryClassRate  Float?   @map("unnecessary_class_rate")
+  redundantSpacingCount Int?     @map("redundant_spacing_count")
+  standardValueMatch    Float?   @map("standard_value_match")
+  
+  // 統計情報
+  totalFrames           Int      @map("total_frames")
+  analyzedFrames        Int      @map("analyzed_frames")
+  autoLayoutFrames      Int      @map("auto_layout_frames")
+  componentUsage        Int      @map("component_usage")
+  
+  // 違反数
+  criticalViolations    Int      @map("critical_violations")
+  majorViolations       Int      @map("major_violations")
+  minorViolations       Int      @map("minor_violations")
+  totalViolations       Int      @map("total_violations")
+  
+  // HTML生成可否判定
+  htmlGeneratable       Boolean  @default(false) @map("html_generatable")
+  generatableReason     String?  @map("generatable_reason") @db.Text
+  
+  // レスポンシブ対応状況
+  mobileReady           Boolean  @default(false) @map("mobile_ready")
+  tabletReady           Boolean  @default(false) @map("tablet_ready")
+  desktopReady          Boolean  @default(true) @map("desktop_ready")
+  
+  // パフォーマンス指標
+  analysisTimeMs        Int      @map("analysis_time_ms")
+  
+  // Raw Data (JSON)
+  rawFigmaData          Json?    @map("raw_figma_data")
+  
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // リレーション
+  project               Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([figleanScore])
+  @@index([createdAt])
+  @@map("analysis_results")
+}
+
+// =====================================
+// ルール違反・診断詳細
+// =====================================
+
+/// ルール違反テーブル
+model RuleViolation {
+  id            String       @id @default(uuid()) @db.Uuid
+  projectId     String       @map("project_id") @db.Uuid
+  analysisId    String?      @map("analysis_id") @db.Uuid
+  
+  // Frame情報
+  frameName     String       @map("frame_name") @db.VarChar(255)
+  frameId       String?      @map("frame_id") @db.VarChar(255)
+  framePath     String?      @map("frame_path") @db.Text
+  
+  // ルール情報
+  ruleId        String       @map("rule_id") @db.VarChar(100)
+  ruleName      String       @map("rule_name") @db.VarChar(255)
+  ruleCategory  RuleCategory @map("rule_category")
+  severity      Severity
+  
+  // 説明・影響
+  description   String       @db.Text
+  impact        String?      @db.Text
+  
+  // 修正提案
+  suggestion    String?      @db.Text
+  fixSteps      Json?        @map("fix_steps")
+  
+  // 詳細情報
+  detectedValue String?      @map("detected_value") @db.Text
+  expectedValue String?      @map("expected_value") @db.Text
+  
+  // Figmaコメント投稿状態
+  commentPosted Boolean      @default(false) @map("comment_posted")
+  figmaCommentId String?     @map("figma_comment_id") @db.VarChar(255)
+  
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // リレーション
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([severity])
+  @@index([ruleCategory])
+  @@index([ruleId])
+  @@map("rule_violations")
+}
+
+/// 崩壊予測テーブル
+model BreakPrediction {
+  id              String   @id @default(uuid()) @db.Uuid
+  projectId       String   @map("project_id") @db.Uuid
+  
+  // 予測内容
+  breakType       String   @map("break_type") @db.VarChar(100)
+  breakTitle      String   @map("break_title") @db.VarChar(255)
+  breakDescription String  @map("break_description") @db.Text
+  
+  // 影響範囲
+  affectedFrame   String   @map("affected_frame") @db.VarChar(255)
+  affectedFrameId String?  @map("affected_frame_id") @db.VarChar(255)
+  
+  // ブレークポイント情報
+  breakpoint      String?  @db.VarChar(50)
+  screenWidth     Int?     @map("screen_width")
+  
+  // 修正提案
+  fixSuggestion   String   @map("fix_suggestion") @db.Text
+  
+  // 重要度
+  severity        Severity
+  
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // リレーション
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([severity])
+  @@map("break_predictions")
+}
+
+/// 改善提案テーブル
+model ImprovementSuggestion {
+  id                String   @id @default(uuid()) @db.Uuid
+  projectId         String   @map("project_id") @db.Uuid
+  
+  // 提案順序
+  priority          Int
+  
+  // 提案内容
+  title             String   @db.VarChar(255)
+  description       String   @db.Text
+  
+  // 対象Frame
+  targetFrame       String   @map("target_frame") @db.VarChar(255)
+  targetFrameId     String?  @map("target_frame_id") @db.VarChar(255)
+  
+  // 改善効果
+  impactLevel       String   @map("impact_level") @db.VarChar(50)
+  scoreImprovement  Int      @map("score_improvement")
+  
+  // 作業量
+  estimatedTime     String?  @map("estimated_time") @db.VarChar(100)
+  difficulty        String?  @db.VarChar(50)
+  
+  // 具体的な手順
+  actionSteps       Json?    @map("action_steps")
+  
+  // ビフォー・アフター
+  beforeValue       String?  @map("before_value") @db.Text
+  afterValue        String?  @map("after_value") @db.Text
+  
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // リレーション
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([priority])
+  @@map("improvement_suggestions")
+}
+
+// =====================================
+// HTML生成管理
+// =====================================
+
+/// 生成HTML管理テーブル
+model GeneratedHtml {
+  id                  String            @id @default(uuid()) @db.Uuid
+  projectId           String            @map("project_id") @db.Uuid
+  userId              String            @map("user_id") @db.Uuid
+  
+  // 生成設定
+  framework           Framework
+  includeResponsive   Boolean           @default(true) @map("include_responsive")
+  includeGrid         Boolean           @default(false) @map("include_grid")
+  breakpoints         Json?             // カスタムブレークポイント設定
+  
+  // 生成結果
+  generationStatus    GenerationStatus  @default(NOT_GENERATED) @map("generation_status")
+  htmlCode            String?           @db.Text
+  cssCode             String?           @db.Text
+  componentCode       String?           @map("component_code") @db.Text
+  
+  // コード統計
+  totalLines          Int?              @map("total_lines")
+  tailwindClasses     Int?              @map("tailwind_classes")
+  componentCount      Int?              @map("component_count")
+  
+  // 生成品質
+  reproductionRate    Float?            @map("reproduction_rate")
+  codeQualityScore    Int?              @map("code_quality_score")
+  
+  // エラー情報
+  errorMessage        String?           @map("error_message") @db.Text
+  
+  // パフォーマンス
+  generationTimeMs    Int?              @map("generation_time_ms")
+  
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // リレーション
+  project             Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([generationStatus])
+  @@map("generated_htmls")
+}
+
+// =====================================
+// ルール定義マスタ（管理用）
+// =====================================
+
+/// ルール定義マスタ
+model RuleDefinition {
+  id              String       @id @default(uuid()) @db.Uuid
+  ruleId          String       @unique @map("rule_id") @db.VarChar(100)
+  ruleName        String       @map("rule_name") @db.VarChar(255)
+  ruleCategory    RuleCategory @map("rule_category")
+  severity        Severity
+  
+  // ルール説明
+  description     String       @db.Text
+  impactTemplate  String       @map("impact_template") @db.Text
+  
+  // 診断ロジック
+  checkLogic      Json         @map("check_logic")
+  
+  // 修正提案テンプレート
+  suggestionTemplate String?   @map("suggestion_template") @db.Text
+  
+  // スコアへの影響
+  scoreImpact     Int          @map("score_impact")
+  
+  // 有効/無効
+  isActive        Boolean      @default(true) @map("is_active")
+  
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([ruleCategory])
+  @@index([severity])
+  @@map("rule_definitions")
+}
+
+// =====================================
+// 監査ログ（将来拡張用）
+// =====================================
+
+/// 監査ログ
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  action      String   @db.VarChar(100)
+  entityType  String   @map("entity_type") @db.VarChar(100)
+  entityId    String?  @map("entity_id") @db.Uuid
+  details     Json?
+  ipAddress   String?  @map("ip_address") @db.VarChar(45)
+  userAgent   String?  @map("user_agent") @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// =====================================
+// Figmaデザイン読み込み・キャッシュ管理
+// =====================================
+
+/// Figmaファイルメタデータキャッシュ
+model FigmaFileCache {
+  id                String    @id @default(uuid()) @db.Uuid
+  fileKey           String    @unique @map("file_key") @db.VarChar(255)
+  
+  // ファイル基本情報
+  fileName          String    @map("file_name") @db.VarChar(500)
+  thumbnailUrl      String?   @map("thumbnail_url") @db.Text
+  lastModified      DateTime? @map("last_modified") @db.Timestamptz(6)
+  version           String?   @db.VarChar(100)
+  
+  // アクセス情報
+  editorType        String?   @map("editor_type") @db.VarChar(50)
+  
+  // キャッシュ状態
+  isCached          Boolean   @default(true) @map("is_cached")
+  cacheExpiredAt    DateTime? @map("cache_expired_at") @db.Timestamptz(6)
+  
+  // アクセス統計
+  accessCount       Int       @default(0) @map("access_count")
+  lastAccessedAt    DateTime? @map("last_accessed_at") @db.Timestamptz(6)
+  
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // リレーション
+  nodes             FigmaNodeCache[]
+
+  @@index([fileKey])
+  @@index([cacheExpiredAt])
+  @@map("figma_file_caches")
+}
+
+/// Figmaノードキャッシュ（Frame/Component単位）
+model FigmaNodeCache {
+  id                  String          @id @default(uuid()) @db.Uuid
+  fileKey             String          @map("file_key") @db.VarChar(255)
+  nodeId              String          @map("node_id") @db.VarChar(255)
+  
+  // ノード基本情報
+  nodeName            String          @map("node_name") @db.VarChar(500)
+  nodeType            String          @map("node_type") @db.VarChar(50)
+  
+  // 階層情報
+  parentNodeId        String?         @map("parent_node_id") @db.VarChar(255)
+  depth               Int             @default(0)
+  path                String?         @db.Text
+  
+  // Auto Layout情報
+  hasAutoLayout       Boolean         @default(false) @map("has_auto_layout")
+  layoutMode          String?         @map("layout_mode") @db.VarChar(50)
+  layoutWrap          String?         @map("layout_wrap") @db.VarChar(50)
+  primaryAxisSizing   String?         @map("primary_axis_sizing") @db.VarChar(50)
+  counterAxisSizing   String?         @map("counter_axis_sizing") @db.VarChar(50)
+  paddingLeft         Float?          @map("padding_left")
+  paddingRight        Float?          @map("padding_right")
+  paddingTop          Float?          @map("padding_top")
+  paddingBottom       Float?          @map("padding_bottom")
+  itemSpacing         Float?          @map("item_spacing")
+  
+  // サイズ・制約情報
+  width               Float?
+  height              Float?
+  minWidth            Float?          @map("min_width")
+  maxWidth            Float?          @map("max_width")
+  minHeight           Float?          @map("min_height")
+  maxHeight           Float?          @map("max_height")
+  
+  // 制約情報
+  constraints         Json?
+  layoutPositioning   String?         @map("layout_positioning") @db.VarChar(50)
+  
+  // Component情報
+  isComponent         Boolean         @default(false) @map("is_component")
+  componentId         String?         @map("component_id") @db.VarChar(255)
+  componentKey        String?         @map("component_key") @db.VarChar(255)
+  isInstance          Boolean         @default(false) @map("is_instance")
+  
+  // スタイル情報
+  fills               Json?
+  strokes             Json?
+  effects             Json?
+  cornerRadius        Float?          @map("corner_radius")
+  
+  // テキスト情報（TEXT型の場合）
+  characters          String?         @db.Text
+  fontSize            Float?          @map("font_size")
+  fontFamily          String?         @map("font_family") @db.VarChar(255)
+  fontWeight          Int?            @map("font_weight")
+  textAlignHorizontal String?         @map("text_align_horizontal") @db.VarChar(50)
+  textAlignVertical   String?         @map("text_align_vertical") @db.VarChar(50)
+  
+  // 表示状態
+  visible             Boolean         @default(true)
+  locked              Boolean         @default(false)
+  
+  // Raw Data（完全なFigma APIレスポンス）
+  rawNodeData         Json            @map("raw_node_data")
+  
+  // キャッシュ状態
+  isCached            Boolean         @default(true) @map("is_cached")
+  cacheExpiredAt      DateTime?       @map("cache_expired_at") @db.Timestamptz(6)
+  
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // リレーション
+  file                FigmaFileCache  @relation(fields: [fileKey], references: [fileKey], onDelete: Cascade)
+
+  @@unique([fileKey, nodeId])
+  @@index([fileKey])
+  @@index([nodeId])
+  @@index([nodeType])
+  @@index([hasAutoLayout])
+  @@index([isComponent])
+  @@map("figma_node_caches")
+}
+
+/// Figmaデザイン読み込み履歴
+model FigmaLoadHistory {
+  id                String    @id @default(uuid()) @db.Uuid
+  projectId         String?   @map("project_id") @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  
+  // 読み込み対象
+  fileKey           String    @map("file_key") @db.VarChar(255)
+  nodeId            String?   @map("node_id") @db.VarChar(255)
+  
+  // 読み込み結果
+  status            String    @db.VarChar(50)
+  totalNodes        Int?      @map("total_nodes")
+  successNodes      Int?      @map("success_nodes")
+  failedNodes       Int?      @map("failed_nodes")
+  
+  // エラー情報
+  errorMessage      String?   @map("error_message") @db.Text
+  errorCode         String?   @map("error_code") @db.VarChar(100)
+  
+  // パフォーマンス
+  loadTimeMs        Int?      @map("load_time_ms")
+  apiCallCount      Int?      @map("api_call_count")
+  
+  // キャッシュ使用状況
+  cacheHitRate      Float?    @map("cache_hit_rate")
+  
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([fileKey])
+  @@index([status])
+  @@index([createdAt])
+  @@map("figma_load_histories")
+}
+
+/// Figma APIレート制限管理
+model FigmaApiRateLimit {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String?   @map("user_id") @db.Uuid
+  
+  // レート制限情報
+  endpoint          String    @db.VarChar(255)
+  requestCount      Int       @default(0) @map("request_count")
+  limitPerHour      Int       @default(100) @map("limit_per_hour")
+  
+  // リセット時刻
+  windowStart       DateTime  @map("window_start") @db.Timestamptz(6)
+  windowEnd         DateTime  @map("window_end") @db.Timestamptz(6)
+  
+  // 制限状態
+  isLimited         Boolean   @default(false) @map("is_limited")
+  limitedUntil      DateTime? @map("limited_until") @db.Timestamptz(6)
+  
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([userId, endpoint, windowStart])
+  @@index([userId])
+  @@index([windowEnd])
+  @@map("figma_api_rate_limits")
+}
