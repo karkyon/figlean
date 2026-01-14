@@ -1,7 +1,7 @@
 /**
- * FIGLEAN Frontend - Dashboard（メイン画面）
+ * FIGLEAN Frontend - Dashboard（メイン画面）- Phase 3拡張版
  * パス: /dashboard
- * ワイヤーフレーム: figlean-wireframe-complete.html に基づく実装
+ * Phase 3.2-3.4: フィルター・ソート・検索機能追加
  */
 
 'use client';
@@ -14,18 +14,42 @@ import { CreateProjectModal } from '@/components/project/CreateProjectModal';
 import type { Project } from '@/types/models';
 
 // =====================================
+// 型定義
+// =====================================
+
+type SortField = 'createdAt' | 'updatedAt' | 'figleanScore' | 'name';
+type SortOrder = 'asc' | 'desc';
+type StatusFilter = 'ALL' | 'PENDING' | 'IMPORTING' | 'ANALYZING' | 'COMPLETED' | 'FAILED';
+
+// =====================================
 // ダッシュボードページ
 // =====================================
 
 export default function DashboardPage() {
   const router = useRouter();
   const { user } = useAuthStore();
+  
+  // プロジェクト関連
   const [projects, setProjects] = useState<Project[]>([]);
+  const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // モーダル
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  
+  // フィルター・ソート・検索
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
+  const [sortField, setSortField] = useState<SortField>('createdAt');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [scoreMin, setScoreMin] = useState<number | null>(null);
+  const [scoreMax, setScoreMax] = useState<number | null>(null);
 
-  // プロジェクト一覧取得
+  // =====================================
+  // データ取得
+  // =====================================
+
   useEffect(() => {
     fetchProjects();
   }, []);
@@ -34,34 +58,111 @@ export default function DashboardPage() {
     try {
       setIsLoading(true);
       setError(null);
-      const response = await projectsApi.getProjects({ offset: 0, limit: 20 });
+      const response = await projectsApi.getProjects({ offset: 0, limit: 100 });
       
-      // APIレスポンスの形式に応じて適切にプロジェクトを取得
       const projectsData = (response as any).projects || (response as any).items || [];
       
       setProjects(projectsData);
+      setFilteredProjects(projectsData);
     } catch (error: any) {
       console.error('プロジェクト取得エラー:', error);
       setError('プロジェクトの取得に失敗しました');
       setProjects([]);
+      setFilteredProjects([]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // プロジェクト作成成功時のハンドラー
+  // =====================================
+  // フィルター・ソート・検索ロジック
+  // =====================================
+
+  useEffect(() => {
+    applyFiltersAndSort();
+  }, [searchQuery, statusFilter, sortField, sortOrder, scoreMin, scoreMax, projects]);
+
+  const applyFiltersAndSort = () => {
+    let result = [...projects];
+
+    // 検索フィルター
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(p => 
+        p.name.toLowerCase().includes(query) ||
+        (p.figmaFileName && p.figmaFileName.toLowerCase().includes(query))
+      );
+    }
+
+    // ステータスフィルター
+    if (statusFilter !== 'ALL') {
+      result = result.filter(p => p.analysisStatus === statusFilter);
+    }
+
+    // スコアフィルター
+    if (scoreMin !== null) {
+      result = result.filter(p => p.figleanScore !== null && p.figleanScore >= scoreMin);
+    }
+    if (scoreMax !== null) {
+      result = result.filter(p => p.figleanScore !== null && p.figleanScore <= scoreMax);
+    }
+
+    // ソート
+    result.sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortField) {
+        case 'name':
+          aValue = a.name.toLowerCase();
+          bValue = b.name.toLowerCase();
+          break;
+        case 'figleanScore':
+          aValue = a.figleanScore ?? -1;
+          bValue = b.figleanScore ?? -1;
+          break;
+        case 'updatedAt':
+          aValue = new Date(a.updatedAt).getTime();
+          bValue = new Date(b.updatedAt).getTime();
+          break;
+        case 'createdAt':
+        default:
+          aValue = new Date(a.createdAt).getTime();
+          bValue = new Date(b.createdAt).getTime();
+          break;
+      }
+
+      if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    setFilteredProjects(result);
+  };
+
+  // =====================================
+  // イベントハンドラー
+  // =====================================
+
   const handleProjectCreated = (projectId: string) => {
-    // モーダルを閉じる
     setIsCreateModalOpen(false);
-    
-    // プロジェクト一覧を再取得
     fetchProjects();
-    
-    // プロジェクト詳細ページへ遷移
     router.push(`/projects/${projectId}`);
   };
 
-  // スコアの色を取得
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('ALL');
+    setScoreMin(null);
+    setScoreMax(null);
+    setSortField('createdAt');
+    setSortOrder('desc');
+  };
+
+  // =====================================
+  // ヘルパー関数
+  // =====================================
+
   const getScoreColor = (score: number | null) => {
     if (!score) return '#94a3b8';
     if (score >= 90) return '#16a34a';
@@ -69,7 +170,6 @@ export default function DashboardPage() {
     return '#ef4444';
   };
 
-  // ステータスのラベルを取得
   const getStatusLabel = (status: string) => {
     const labels: Record<string, string> = {
       PENDING: '待機中',
@@ -81,13 +181,27 @@ export default function DashboardPage() {
     return labels[status] || status;
   };
 
+  const getStatusBadgeColor = (status: string) => {
+    const colors: Record<string, string> = {
+      PENDING: 'bg-gray-100 text-gray-800',
+      IMPORTING: 'bg-blue-100 text-blue-800',
+      ANALYZING: 'bg-yellow-100 text-yellow-800',
+      COMPLETED: 'bg-green-100 text-green-800',
+      FAILED: 'bg-red-100 text-red-800',
+    };
+    return colors[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  // =====================================
+  // レンダリング
+  // =====================================
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="h-16 bg-gradient-to-r from-gray-900 to-gray-800 text-white flex items-center justify-between px-6 shadow-lg">
         <div className="text-2xl font-extrabold">FIGLEAN</div>
         <div className="flex items-center gap-4">
-          {/* Figma接続状態 */}
           {user?.hasFigmaToken ? (
             <div className="flex items-center gap-2 bg-green-600 px-3 py-1.5 rounded-full text-xs font-semibold">
               <span className="w-2 h-2 bg-white rounded-full"></span>
@@ -99,7 +213,6 @@ export default function DashboardPage() {
               Figma Not Connected
             </div>
           )}
-          {/* ユーザー情報 */}
           <div className="bg-gray-700 px-3 py-1.5 rounded-full text-sm">
             {user?.name || user?.email}
           </div>
@@ -120,7 +233,6 @@ export default function DashboardPage() {
 
         {/* Action Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          {/* 新規プロジェクト作成 */}
           <button
             onClick={() => setIsCreateModalOpen(true)}
             className="bg-white rounded-2xl p-8 shadow-sm border-2 border-transparent hover:border-indigo-600 hover:shadow-xl transition-all duration-200 hover:-translate-y-1 text-left"
@@ -134,7 +246,6 @@ export default function DashboardPage() {
             </p>
           </button>
 
-          {/* Figma連携設定 */}
           <button
             onClick={() => router.push('/settings/figma')}
             className="bg-white rounded-2xl p-8 shadow-sm border-2 border-transparent hover:border-indigo-600 hover:shadow-xl transition-all duration-200 hover:-translate-y-1 text-left"
@@ -148,7 +259,6 @@ export default function DashboardPage() {
             </p>
           </button>
 
-          {/* ドキュメント */}
           <button
             onClick={() => window.open('https://docs.figlean.com', '_blank')}
             className="bg-white rounded-2xl p-8 shadow-sm border-2 border-transparent hover:border-indigo-600 hover:shadow-xl transition-all duration-200 hover:-translate-y-1 text-left"
@@ -165,9 +275,124 @@ export default function DashboardPage() {
 
         {/* Projects Section */}
         <div className="mb-12">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">
-            最近のプロジェクト
-          </h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-gray-900">
+              プロジェクト一覧 ({filteredProjects.length})
+            </h2>
+          </div>
+
+          {/* フィルター・ソート・検索UI */}
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-6">
+            {/* 検索バー */}
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                🔍 検索
+              </label>
+              <input
+                type="text"
+                placeholder="プロジェクト名またはFigmaファイル名で検索..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* フィルター行 */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              {/* ステータスフィルター */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  ステータス
+                </label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="ALL">すべて</option>
+                  <option value="PENDING">待機中</option>
+                  <option value="IMPORTING">インポート中</option>
+                  <option value="ANALYZING">解析中</option>
+                  <option value="COMPLETED">完了</option>
+                  <option value="FAILED">失敗</option>
+                </select>
+              </div>
+
+              {/* スコア範囲フィルター */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  スコア (最小)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  placeholder="0"
+                  value={scoreMin ?? ''}
+                  onChange={(e) => setScoreMin(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  スコア (最大)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  placeholder="100"
+                  value={scoreMax ?? ''}
+                  onChange={(e) => setScoreMax(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* クリアボタン */}
+              <div className="flex items-end">
+                <button
+                  onClick={handleClearFilters}
+                  className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-semibold"
+                >
+                  フィルターをクリア
+                </button>
+              </div>
+            </div>
+
+            {/* ソート行 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  並び替え
+                </label>
+                <select
+                  value={sortField}
+                  onChange={(e) => setSortField(e.target.value as SortField)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="createdAt">作成日時</option>
+                  <option value="updatedAt">更新日時</option>
+                  <option value="name">プロジェクト名</option>
+                  <option value="figleanScore">FIGLEANスコア</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  順序
+                </label>
+                <select
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="desc">降順</option>
+                  <option value="asc">昇順</option>
+                </select>
+              </div>
+            </div>
+          </div>
 
           {/* エラー表示 */}
           {error && (
@@ -194,26 +419,32 @@ export default function DashboardPage() {
           ) : (
             <>
               {/* プロジェクトなし */}
-              {(!projects || projects.length === 0) ? (
+              {(!filteredProjects || filteredProjects.length === 0) ? (
                 <div className="bg-white rounded-xl p-12 text-center border border-gray-200">
                   <div className="text-6xl mb-4">📁</div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    プロジェクトがありません
+                    {searchQuery || statusFilter !== 'ALL' || scoreMin !== null || scoreMax !== null
+                      ? '条件に一致するプロジェクトがありません'
+                      : 'プロジェクトがありません'}
                   </h3>
                   <p className="text-gray-600 mb-6">
-                    新規プロジェクトを作成してFigmaデザインを診断しましょう
+                    {searchQuery || statusFilter !== 'ALL' || scoreMin !== null || scoreMax !== null
+                      ? 'フィルター条件を変更してください'
+                      : '新規プロジェクトを作成してFigmaデザインを診断しましょう'}
                   </p>
-                  <button
-                    onClick={() => setIsCreateModalOpen(true)}
-                    className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
-                  >
-                    プロジェクトを作成
-                  </button>
+                  {!searchQuery && statusFilter === 'ALL' && scoreMin === null && scoreMax === null && (
+                    <button
+                      onClick={() => setIsCreateModalOpen(true)}
+                      className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+                    >
+                      プロジェクトを作成
+                    </button>
+                  )}
                 </div>
               ) : (
                 /* プロジェクト一覧表示 */
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {projects.map((project) => (
+                  {filteredProjects.map((project) => (
                     <button
                       key={project.id}
                       onClick={() => router.push(`/projects/${project.id}`)}
@@ -234,26 +465,33 @@ export default function DashboardPage() {
                       </div>
 
                       <div className="text-xs text-gray-600 mb-3">
-                        {project.figmaFileName || 'Figma File'} ・{' '}
-                        {getStatusLabel(project.analysisStatus)}
+                        {project.figmaFileName || 'Figma File'}
                       </div>
 
                       <div className="flex flex-wrap gap-2">
+                        {/* ステータスバッジ */}
+                        <span className={`text-xs px-2 py-1 rounded ${getStatusBadgeColor(project.analysisStatus)}`}>
+                          {getStatusLabel(project.analysisStatus)}
+                        </span>
+
+                        {/* HTML生成可能バッジ */}
                         {project.figleanScore !== null && project.figleanScore >= 90 && (
                           <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
                             HTML生成可能
                           </span>
                         )}
+
+                        {/* Grid生成可能バッジ */}
                         {project.figleanScore !== null && project.figleanScore === 100 && (
                           <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
                             Grid生成可能
                           </span>
                         )}
-                        {project.analysisStatus === 'COMPLETED' && (
-                          <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
-                            診断完了
-                          </span>
-                        )}
+                      </div>
+
+                      {/* 日時表示 */}
+                      <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+                        更新: {new Date(project.updatedAt).toLocaleDateString('ja-JP')}
                       </div>
                     </button>
                   ))}
@@ -264,7 +502,7 @@ export default function DashboardPage() {
         </div>
       </main>
 
-      {/* Create Project Modal - 実装済みコンポーネントを使用 */}
+      {/* Create Project Modal */}
       <CreateProjectModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
