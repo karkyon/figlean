@@ -7,7 +7,7 @@
 // 説明: レスポンシブブレークポイント崩壊予測生成
 // =====================================
 
-import { PrismaClient, BreakPrediction, RuleViolation } from '@prisma/client';
+import { PrismaClient, BreakPrediction } from '@prisma/client';
 import { NotFoundError, ValidationError } from '../errors';
 import logger from '../utils/logger';
 

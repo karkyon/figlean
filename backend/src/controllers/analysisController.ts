@@ -2,6 +2,7 @@
 // backend/src/controllers/analysisController.ts
 // 診断結果コントローラー - FIGLEAN Phase 6.6
 // 作成日時: 2026年1月11日
+// 更新日時: 2026年1月14日 - Named Export対応+徹底ログ追加
 // 依存関係: @prisma/client, NextFunction
 // 説明: 診断結果取得APIエンドポイント
 // =====================================
@@ -25,6 +26,12 @@ export async function getAnalysisSummary(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  logger.info('🔵 [CONTROLLER] getAnalysisSummary 開始', {
+    projectId: req.params.projectId,
+    userId: req.user?.userId,
+    headers: req.headers
+  });
+
   try {
     const { projectId } = req.params;
     const userId = req.user!.userId;
@@ -33,14 +40,19 @@ export async function getAnalysisSummary(
       throw new ValidationError('projectIdは必須です');
     }
 
+    logger.info('🔍 [CONTROLLER] プロジェクト検索', { projectId, userId });
+
     // プロジェクトの所有権確認
     const project = await prisma.project.findUnique({
       where: { id: projectId, userId }
     });
 
     if (!project) {
+      logger.warn('⚠️ [CONTROLLER] プロジェクトなし', { projectId, userId });
       throw new ValidationError('プロジェクトが見つかりません');
     }
+
+    logger.info('✅ [CONTROLLER] プロジェクト確認OK', { projectId });
 
     // 解析結果を取得（findFirstを使用 - @uniqueがないため）
     const analysisResult = await prisma.analysisResult.findFirst({
@@ -49,10 +61,14 @@ export async function getAnalysisSummary(
     });
 
     if (!analysisResult) {
+      logger.warn('⚠️ [CONTROLLER] 解析結果なし', { projectId });
       throw new ValidationError('診断結果がありません。先にFigmaインポートを実行してください');
     }
 
-    logger.info('診断サマリー取得成功', { projectId, userId });
+    logger.info('✅ [CONTROLLER] 解析結果取得成功', { 
+      projectId, 
+      score: analysisResult.figleanScore 
+    });
 
     res.json({
       success: true,
@@ -74,7 +90,7 @@ export async function getAnalysisSummary(
       }
     });
   } catch (error) {
-    logger.error('診断サマリー取得エラー', { error, requestId: req.id });
+    logger.error('❌ [CONTROLLER] 診断サマリー取得エラー', { error, requestId: req.id });
     next(error);
   }
 }
@@ -89,6 +105,11 @@ export async function getViolations(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  logger.info('🔵 [CONTROLLER] getViolations 開始', {
+    projectId: req.params.projectId,
+    userId: req.user?.userId
+  });
+
   try {
     const { projectId } = req.params;
     const { severity, limit } = req.query;
@@ -124,7 +145,7 @@ export async function getViolations(
       }
     });
 
-    logger.info('ルール違反一覧取得成功', {
+    logger.info('✅ [CONTROLLER] ルール違反一覧取得成功', {
       projectId,
       count: violations.length,
       total
@@ -138,7 +159,7 @@ export async function getViolations(
       }
     });
   } catch (error) {
-    logger.error('ルール違反一覧取得エラー', { error, requestId: req.id });
+    logger.error('❌ [CONTROLLER] ルール違反一覧取得エラー', { error, requestId: req.id });
     next(error);
   }
 }
@@ -152,6 +173,11 @@ export async function getPredictions(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  logger.info('🔵 [CONTROLLER] getPredictions 開始', {
+    projectId: req.params.projectId,
+    userId: req.user?.userId
+  });
+
   try {
     const userId = req.user!.userId;
     const { projectId } = req.params;
@@ -161,7 +187,7 @@ export async function getPredictions(
     // 崩壊予測取得
     const result = await predictionService.getPredictions(userId, projectId);
 
-    logger.info('崩壊予測取得API成功', { 
+    logger.info('✅ [CONTROLLER] 崩壊予測取得API成功', { 
       userId, 
       projectId,
       totalPredictions: result.summary.totalPredictions
@@ -172,7 +198,7 @@ export async function getPredictions(
       data: result
     });
   } catch (error) {
-    logger.error('崩壊予測取得APIエラー', { 
+    logger.error('❌ [CONTROLLER] 崩壊予測取得APIエラー', { 
       error, 
       requestId: req.id 
     });
@@ -189,6 +215,11 @@ export async function getSuggestions(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  logger.info('🔵 [CONTROLLER] getSuggestions 開始', {
+    projectId: req.params.projectId,
+    userId: req.user?.userId
+  });
+
   try {
     const userId = req.user!.userId;
     const { projectId } = req.params;
@@ -198,7 +229,7 @@ export async function getSuggestions(
     // 改善提案取得
     const result = await suggestionService.getSuggestions(userId, projectId);
 
-    logger.info('改善提案取得API成功', { 
+    logger.info('✅ [CONTROLLER] 改善提案取得API成功', { 
       userId, 
       projectId,
       totalSuggestions: result.summary.totalSuggestions
@@ -209,21 +240,10 @@ export async function getSuggestions(
       data: result
     });
   } catch (error) {
-    logger.error('改善提案取得APIエラー', { 
+    logger.error('❌ [CONTROLLER] 改善提案取得APIエラー', { 
       error, 
       requestId: req.id 
     });
     next(error);
   }
 }
-
-// =====================================
-// Export
-// =====================================
-
-export default {
-  getAnalysisSummary,
-  getViolations,
-  getPredictions,
-  getSuggestions
-};

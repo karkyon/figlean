@@ -5,7 +5,7 @@
  * 【修正内容】2026-01-14
  * - API_URLとAPI_BASE_PATHの分離設定を統合
  * - NEXT_PUBLIC_API_URLに一本化（推奨設定）
- * - デフォルト値をlocalhost:3101/apiに変更
+ * - デフォルト値をlocalhost:3001/apiに修正（正しいBackendポート）
  */
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
@@ -18,13 +18,13 @@ import { ApiError } from '@/types/api';
 /**
  * APIベースURL
  * 環境変数NEXT_PUBLIC_API_URLから取得
- * デフォルト: http://localhost:3101/api
+ * デフォルト: http://localhost:3001/api
  * 
  * 【重要】環境変数設定例：
- * - 開発環境: NEXT_PUBLIC_API_URL=http://localhost:3101/api
+ * - 開発環境: NEXT_PUBLIC_API_URL=http://localhost:3001/api
  * - 本番環境: NEXT_PUBLIC_API_URL=https://api.figlean.com/api
  */
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3101/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
 // =====================================
 // トークン管理

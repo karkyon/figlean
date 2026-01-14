@@ -7,8 +7,13 @@
 // 説明: 診断結果取得APIのルーティング設定（Swagger完全記述）
 // =====================================
 
-import { Router } from 'express';
-import * as analysisController from '../controllers/analysisController';
+import { Router, Request, Response, NextFunction } from 'express';
+import { 
+  getAnalysisSummary, 
+  getViolations, 
+  getPredictions, 
+  getSuggestions 
+} from '../controllers/analysisController';
 import { authenticateToken } from '../middlewares/authenticate';
 import logger from '../utils/logger';
 
@@ -106,14 +111,14 @@ logger.info('🔍 Analysis Routes 初期化');
 router.get(
   '/:projectId',
   authenticateToken,
-  (req, res, next) => {
+  (req: Request, _res: Response, next: NextFunction) => {
     logger.info('[ANALYSIS API] 診断サマリー取得開始', { 
       projectId: req.params.projectId,
       userId: (req as any).user?.userId 
     });
     next();
   },
-  analysisController.getAnalysisSummary
+  getAnalysisSummary
 );
 
 /**
@@ -208,7 +213,7 @@ router.get(
 router.get(
   '/:projectId/violations',
   authenticateToken,
-  (req, res, next) => {
+  (req: Request, _res: Response, next: NextFunction) => {
     logger.info('[ANALYSIS API] ルール違反取得開始', { 
       projectId: req.params.projectId,
       userId: (req as any).user?.userId,
@@ -217,7 +222,7 @@ router.get(
     });
     next();
   },
-  analysisController.getViolations
+  getViolations
 );
 
 // =====================================
@@ -322,14 +327,14 @@ router.get(
 router.get(
   '/:projectId/predictions',
   authenticateToken,
-  (req, res, next) => {
+  (req: Request, _res: Response, next: NextFunction) => {
     logger.info('[ANALYSIS API] 崩壊予測取得開始', { 
       projectId: req.params.projectId,
       userId: (req as any).user?.userId 
     });
     next();
   },
-  analysisController.getPredictions
+  getPredictions
 );
 
 /**
@@ -427,14 +432,14 @@ router.get(
 router.get(
   '/:projectId/suggestions',
   authenticateToken,
-  (req, res, next) => {
+  (req: Request, _res: Response, next: NextFunction) => {
     logger.info('[ANALYSIS API] 改善提案取得開始', { 
       projectId: req.params.projectId,
       userId: (req as any).user?.userId 
     });
     next();
   },
-  analysisController.getSuggestions
+  getSuggestions
 );
 
 // =====================================
