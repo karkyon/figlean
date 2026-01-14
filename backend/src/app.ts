@@ -155,7 +155,7 @@ app.use('/api/figma/comments', figmaCommentRoutes);
 app.use('/api/figma', figmaApiRateLimiter, figmaRoutes);
 
 // HTML生成機能
-app.unsubscribe('/api/html', htmlRoutes);
+app.use('/api/html', htmlRoutes);
 
 // =====================================
 // API情報エンドポイント

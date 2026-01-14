@@ -1,7 +1,7 @@
 /**
  * FIGLEAN Frontend - HTML生成関連型定義
  * HTML生成に関する型定義を提供
- * 更新日時: 2026年1月14日
+ * 更新日時: 2026年1月14日 - Phase 2.5 Grid変換機能追加
  */
 
 /**
@@ -45,6 +45,29 @@ export interface HTMLMetadata {
   componentCount: number;
   reproductionRate: number;
   codeQualityScore: number;
+  gridUsed?: boolean;
+  gridCandidates?: number;
+}
+
+/**
+ * Grid判定結果
+ */
+export interface GridAnalysis {
+  canUseGrid: boolean;
+  score: number;
+  reason?: string;
+  candidates: GridCandidate[];
+}
+
+/**
+ * Grid候補ノード
+ */
+export interface GridCandidate {
+  nodeId: string;
+  nodeName: string;
+  childCount: number;
+  wrapEnabled: boolean;
+  autoLayout: boolean;
 }
 
 /**
