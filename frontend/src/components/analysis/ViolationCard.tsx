@@ -1,0 +1,149 @@
+/**
+ * FIGLEAN Frontend - ルール違反カードコンポーネント（修正版）
+ * ファイルパス: frontend/src/components/analysis/ViolationCard.tsx
+ * 
+ * 機能:
+ * - ルール違反の詳細を視覚的に表示
+ * - 重要度別の色分け（CRITICAL/MAJOR/MINOR）
+ * - 影響範囲と改善提案の表示
+ * 
+ * 更新日: 2026年1月14日 - models.tsから型をインポート
+ */
+
+import React from 'react';
+import { Violation, ViolationSeverity } from '@/types/models';
+
+// =====================================
+// 型定義
+// =====================================
+
+interface ViolationCardProps {
+  violation: Violation;
+}
+
+// =====================================
+// ヘルパー関数
+// =====================================
+
+const getSeverityColor = (severity: ViolationSeverity): string => {
+  switch (severity) {
+    case ViolationSeverity.CRITICAL:
+      return 'bg-red-50 border-red-200';
+    case ViolationSeverity.MAJOR:
+      return 'bg-yellow-50 border-yellow-200';
+    case ViolationSeverity.MINOR:
+      return 'bg-blue-50 border-blue-200';
+    default:
+      return 'bg-gray-50 border-gray-200';
+  }
+};
+
+const getSeverityBadgeColor = (severity: ViolationSeverity): string => {
+  switch (severity) {
+    case ViolationSeverity.CRITICAL:
+      return 'bg-red-100 text-red-800';
+    case ViolationSeverity.MAJOR:
+      return 'bg-yellow-100 text-yellow-800';
+    case ViolationSeverity.MINOR:
+      return 'bg-blue-100 text-blue-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+};
+
+const getSeverityLabel = (severity: ViolationSeverity): string => {
+  switch (severity) {
+    case ViolationSeverity.CRITICAL:
+      return '重大';
+    case ViolationSeverity.MAJOR:
+      return '警告';
+    case ViolationSeverity.MINOR:
+      return '軽微';
+    default:
+      return String(severity);
+  }
+};
+
+const getSeverityIcon = (severity: ViolationSeverity): string => {
+  switch (severity) {
+    case ViolationSeverity.CRITICAL:
+      return '🔴';
+    case ViolationSeverity.MAJOR:
+      return '🟡';
+    case ViolationSeverity.MINOR:
+      return '🔵';
+    default:
+      return '⚪';
+  }
+};
+
+// =====================================
+// メインコンポーネント
+// =====================================
+
+export const ViolationCard: React.FC<ViolationCardProps> = ({ violation }) => {
+  return (
+    <div
+      className={`border rounded-lg p-4 ${getSeverityColor(violation.severity)} hover:shadow-md transition-shadow`}
+    >
+      {/* ヘッダー */}
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-lg">{getSeverityIcon(violation.severity)}</span>
+            <h3 className="font-semibold text-gray-900">{violation.ruleName}</h3>
+          </div>
+          <p className="text-sm text-gray-600">
+            フレーム: <span className="font-medium">{violation.frameName}</span>
+          </p>
+        </div>
+        
+        <div className="flex flex-col items-end gap-2">
+          <span
+            className={`px-3 py-1 text-xs font-medium rounded-full ${getSeverityBadgeColor(
+              violation.severity
+            )}`}
+          >
+            {getSeverityLabel(violation.severity)}
+          </span>
+          
+          {violation.commentPosted && (
+            <span className="text-xs text-green-600 flex items-center gap-1">
+              ✓ Figmaコメント投稿済み
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* 説明 */}
+      <div className="mb-3">
+        <p className="text-sm text-gray-700 leading-relaxed">{violation.description}</p>
+      </div>
+
+      {/* カテゴリー */}
+      <div className="mb-3">
+        <span className="inline-block px-2 py-1 text-xs bg-white border border-gray-300 rounded text-gray-700">
+          📂 {violation.ruleCategory}
+        </span>
+      </div>
+
+      {/* 影響範囲 */}
+      {violation.impact && (
+        <div className="mb-3 p-3 bg-white rounded border border-gray-200">
+          <p className="text-xs font-medium text-gray-700 mb-1">💥 影響範囲:</p>
+          <p className="text-sm text-gray-600">{violation.impact}</p>
+        </div>
+      )}
+
+      {/* 改善提案 */}
+      {violation.suggestion && (
+        <div className="p-3 bg-white rounded border border-gray-200">
+          <p className="text-xs font-medium text-gray-700 mb-1">💡 改善提案:</p>
+          <p className="text-sm text-gray-600">{violation.suggestion}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ViolationCard;

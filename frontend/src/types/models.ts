@@ -1,7 +1,8 @@
 /**
- * FIGLEAN Frontend - データモデル型定義
- * Backend APIのレスポンスに対応する型定義
+ * FIGLEAN Frontend - データモデル型定義（完全修正版）
+ * Backend Prisma Schemaに完全一致 + 既存機能を保持
  * 作成日時: 2026年1月12日
+ * 更新日時: 2026年1月14日 - Violation/Prediction/SuggestionをBackendに一致
  */
 
 // =====================================
@@ -29,16 +30,30 @@ export enum ProjectStatus {
 }
 
 /**
- * ルール違反の重要度
+ * ルール違反の重要度（Prisma: Severity）
  */
 export enum ViolationSeverity {
   CRITICAL = 'CRITICAL',
-  WARNING = 'WARNING',
-  INFO = 'INFO',
+  MAJOR = 'MAJOR',      // 旧: WARNING
+  MINOR = 'MINOR',      // 旧: INFO
 }
 
 /**
- * 崩れ予測のリスクレベル
+ * ルールカテゴリー（Prisma: RuleCategory）
+ */
+export enum RuleCategory {
+  AUTO_LAYOUT = 'AUTO_LAYOUT',
+  COMPONENT = 'COMPONENT',
+  SPACING = 'SPACING',
+  RESPONSIVE = 'RESPONSIVE',
+  SEMANTIC = 'SEMANTIC',
+  TEXT = 'TEXT',
+  COLOR = 'COLOR',
+}
+
+/**
+ * 崩れ予測のリスクレベル（参考用・将来削除予定）
+ * @deprecated Backend BreakPredictionではseverityを使用
  */
 export enum PredictionRisk {
   HIGH = 'HIGH',
@@ -146,26 +161,56 @@ export interface ScoreBreakdown {
 }
 
 // =====================================
-// Violation Model
+// Violation Model（Prisma: RuleViolation）
 // =====================================
 
 /**
- * ルール違反
+ * ルール違反（Backend: RuleViolation）
+ * 🔧 修正版: Backendスキーマに完全一致
  */
 export interface Violation {
   id: string;
   projectId: string;
+  analysisId: string | null;
+  
+  // Frame情報
+  frameName: string;
+  frameId: string | null;
+  framePath: string | null;
+  
+  // ルール情報
   ruleId: string;
   ruleName: string;
-  ruleCategory: string;
+  ruleCategory: RuleCategory | string;  // string互換性のため
   severity: ViolationSeverity;
-  message: string;
-  frameId: string;
-  frameName: string;
-  nodeId: string;
-  nodeName: string;
-  details: Record<string, any>;
+  
+  // 説明・影響
+  description: string;
+  impact: string | null;
+  
+  // 修正提案
+  suggestion: string | null;
+  fixSteps: any | null;  // Json
+  
+  // 詳細情報
+  detectedValue: string | null;
+  expectedValue: string | null;
+  
+  // Figmaコメント投稿状態
+  commentPosted: boolean;
+  figmaCommentId: string | null;
+  
   createdAt: string;
+  
+  // 🔧 旧フィールド（後方互換性のため残す・将来削除予定）
+  /** @deprecated Use frameName instead */
+  nodeId?: string;
+  /** @deprecated Use frameName instead */
+  nodeName?: string;
+  /** @deprecated Use description instead */
+  message?: string;
+  /** @deprecated Use fixSteps instead */
+  details?: Record<string, any>;
 }
 
 /**
@@ -180,44 +225,104 @@ export interface ViolationStatistics {
 }
 
 // =====================================
-// Prediction Model
+// Prediction Model（Prisma: BreakPrediction）
 // =====================================
 
 /**
- * 崩れ予測
+ * 崩壊予測（Backend: BreakPrediction）
+ * 🔧 修正版: Backendスキーマに完全一致
  */
 export interface Prediction {
   id: string;
   projectId: string;
-  frameId: string;
-  frameName: string;
-  nodeId: string;
-  nodeName: string;
-  riskLevel: PredictionRisk;
-  breakpoint: string;          // 'mobile' | 'tablet' | 'desktop'
-  predictionText: string;
-  reason: string;
+  
+  // 予測内容
+  breakType: string;           // HORIZONTAL_SCROLL, FLEX_WRAP_FAILURE, etc.
+  breakTitle: string;
+  breakDescription: string;
+  
+  // 影響範囲
+  affectedFrame: string;
+  affectedFrameId: string | null;
+  
+  // ブレークポイント情報
+  breakpoint: string | null;   // 'mobile' | 'tablet' | 'desktop'
+  screenWidth: number | null;
+  
+  // 修正提案
+  fixSuggestion: string;
+  
+  // 重要度
+  severity: ViolationSeverity;
+  
   createdAt: string;
+  
+  // 🔧 旧フィールド（後方互換性のため残す・将来削除予定）
+  /** @deprecated Use affectedFrame instead */
+  frameId?: string;
+  /** @deprecated Use affectedFrame instead */
+  frameName?: string;
+  /** @deprecated Use severity instead */
+  riskLevel?: PredictionRisk;
+  /** @deprecated Use breakDescription instead */
+  predictionText?: string;
+  /** @deprecated Use fixSuggestion instead */
+  reason?: string;
+  /** @deprecated Not used in backend */
+  nodeId?: string;
+  /** @deprecated Not used in backend */
+  nodeName?: string;
 }
 
 // =====================================
-// Suggestion Model
+// Suggestion Model（Prisma: ImprovementSuggestion）
 // =====================================
 
 /**
- * 改善提案
+ * 改善提案（Backend: ImprovementSuggestion）
+ * 🔧 修正版: Backendスキーマに完全一致
  */
 export interface Suggestion {
   id: string;
   projectId: string;
-  violationId: string | null;
-  category: string;
-  priority: number;
+  
+  // 提案順序
+  priority: number;  // Int（数値！）
+  
+  // 提案内容
   title: string;
   description: string;
-  actionItems: string[];
-  estimatedImpact: number;     // スコア改善見込み
+  
+  // 対象Frame
+  targetFrame: string;
+  targetFrameId: string | null;
+  
+  // 改善効果
+  impactLevel: string;         // 'HIGH' | 'MEDIUM' | 'LOW'
+  scoreImprovement: number;
+  
+  // 作業量
+  estimatedTime: string | null;
+  difficulty: string | null;
+  
+  // 具体的な手順（Json配列）
+  actionSteps: any[] | null;   // Json
+  
+  // ビフォー・アフター
+  beforeValue: string | null;
+  afterValue: string | null;
+  
   createdAt: string;
+  
+  // 🔧 旧フィールド（後方互換性のため残す・将来削除予定）
+  /** @deprecated Use actionSteps instead */
+  actionItems?: string[];
+  /** @deprecated Use scoreImprovement instead */
+  estimatedImpact?: number;
+  /** @deprecated Not used in backend */
+  violationId?: string | null;
+  /** @deprecated Use impactLevel instead */
+  category?: string;
 }
 
 // =====================================
