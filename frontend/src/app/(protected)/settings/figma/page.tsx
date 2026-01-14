@@ -1,25 +1,37 @@
 /**
- * FIGLEAN Frontend - Figma連携設定画面
- * パス: /settings/figma
+ * FIGLEAN Frontend - Figma連携設定ページ
+ * ファイルパス: frontend/src/app/(protected)/settings/figma/page.tsx
+ * 
+ * 機能:
+ * - Figmaトークンの登録・削除
+ * - トークン状態の確認
+ * - API制約の説明
+ * 
+ * 更新日: 2026年1月13日 - API制約説明追加
  */
 
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/store/authStore';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
 
 export default function FigmaSettingsPage() {
-  const router = useRouter();
-  const { user, saveFigmaToken, deleteFigmaToken } = useAuthStore();
+  const { user, refreshUser, saveFigmaToken, deleteFigmaToken } = useAuthStore();
+  
   const [token, setToken] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showToken, setShowToken] = useState(false);
 
+  // =====================================
   // トークン保存
+  // =====================================
+
   const handleSaveToken = async () => {
     if (!token.trim()) {
-      setMessage({ type: 'error', text: 'Figmaトークンを入力してください' });
+      setMessage({ type: 'error', text: 'トークンを入力してください' });
       return;
     }
 
@@ -30,14 +42,21 @@ export default function FigmaSettingsPage() {
       await saveFigmaToken(token);
       setMessage({ type: 'success', text: 'Figmaトークンを保存しました' });
       setToken('');
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Figmaトークンの保存に失敗しました' });
+      await refreshUser();
+    } catch (error: any) {
+      setMessage({ 
+        type: 'error', 
+        text: error.message || 'トークンの保存に失敗しました' 
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
+  // =====================================
   // トークン削除
+  // =====================================
+
   const handleDeleteToken = async () => {
     if (!confirm('Figmaトークンを削除してもよろしいですか？')) {
       return;
@@ -49,138 +68,249 @@ export default function FigmaSettingsPage() {
     try {
       await deleteFigmaToken();
       setMessage({ type: 'success', text: 'Figmaトークンを削除しました' });
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Figmaトークンの削除に失敗しました' });
+      await refreshUser();
+    } catch (error: any) {
+      setMessage({ 
+        type: 'error', 
+        text: error.message || 'トークンの削除に失敗しました' 
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
+  // =====================================
+  // メッセージ自動削除
+  // =====================================
+
+  useEffect(() => {
+    if (message) {
+      const timer = setTimeout(() => setMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [message]);
+
+  // =====================================
+  // レンダリング
+  // =====================================
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="h-16 bg-gradient-to-r from-gray-900 to-gray-800 text-white flex items-center justify-between px-6 shadow-lg">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="text-2xl font-extrabold hover:text-gray-300 transition-colors"
-          >
-            FIGLEAN
-          </button>
-          <span className="text-gray-400">/</span>
-          <span className="text-sm text-gray-300">Figma連携設定</span>
-        </div>
-        <div className="bg-gray-700 px-3 py-1.5 rounded-full text-sm">
-          {user?.name || user?.email}
-        </div>
-      </header>
+    <div className="max-w-4xl mx-auto py-8 px-4">
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Figma連携設定</h1>
 
-      {/* Main Content */}
-      <main className="max-w-3xl mx-auto px-8 py-8">
-        <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-200">
-          <h1 className="text-2xl font-extrabold text-gray-900 mb-6">
-            Figma連携設定
-          </h1>
+      {/* =====================================
+          API制約の説明（重要）
+          ===================================== */}
+      <div className="mb-6 bg-yellow-50 border-2 border-yellow-400 rounded-lg p-6">
+        <div className="flex items-start">
+          <span className="text-3xl mr-3">⚠️</span>
+          <div>
+            <h2 className="text-lg font-bold text-yellow-900 mb-3">
+              Figma API の制約について（重要）
+            </h2>
+            
+            <div className="space-y-3 text-sm text-yellow-800">
+              <div>
+                <p className="font-semibold mb-1">
+                  📁 ファイル一覧の取得について
+                </p>
+                <p className="pl-4">
+                  Figma APIでは、<strong>チームに所属していないアカウント</strong>はファイル一覧を取得できません。
+                  <br />
+                  個人アカウントやフリープランで利用している場合、ファイル一覧が表示されないことがあります。
+                </p>
+              </div>
 
-          {/* 接続状態 */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-sm font-semibold text-gray-700">接続状態:</span>
-              {user?.hasFigmaToken ? (
-                <div className="flex items-center gap-2 bg-green-100 text-green-800 px-3 py-1.5 rounded-full text-xs font-semibold">
-                  <span className="w-2 h-2 bg-green-600 rounded-full"></span>
-                  接続済み
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full text-xs font-semibold">
-                  <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
-                  未接続
-                </div>
-              )}
+              <div>
+                <p className="font-semibold mb-1">
+                  ✅ 解決方法
+                </p>
+                <ul className="list-disc list-inside pl-4 space-y-1">
+                  <li>
+                    <strong>方法1:</strong> Figmaでチームを作成し、チームに参加する
+                  </li>
+                  <li>
+                    <strong>方法2:</strong> プロジェクト作成時に「URL入力」タブからファイルURLを直接指定する（推奨）
+                  </li>
+                </ul>
+              </div>
+
+              <div className="bg-white border border-yellow-300 rounded p-3 mt-3">
+                <p className="font-semibold text-yellow-900 mb-1">
+                  💡 おすすめの使い方
+                </p>
+                <p className="text-xs">
+                  チーム未所属の場合でも、<strong>FigmaファイルのURLさえあれば</strong>プロジェクトを作成できます。
+                  <br />
+                  新規プロジェクト作成 → 「URL入力」タブ → FigmaファイルのURLを貼り付け
+                </p>
+              </div>
             </div>
-            <p className="text-sm text-gray-600">
-              Figmaトークンを設定すると、Figmaファイルにアクセスできるようになります
-            </p>
           </div>
+        </div>
+      </div>
 
-          {/* メッセージ表示 */}
-          {message && (
-            <div
-              className={`mb-6 p-4 rounded-lg ${
-                message.type === 'success'
-                  ? 'bg-green-50 text-green-800 border border-green-200'
-                  : 'bg-red-50 text-red-800 border border-red-200'
-              }`}
-            >
-              {message.text}
+      {/* =====================================
+          トークン状態表示
+          ===================================== */}
+      <div className="bg-white border rounded-lg p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">連携状態</h2>
+        
+        {user?.hasFigmaToken ? (
+          <div className="space-y-4">
+            <div className="flex items-center">
+              <div className="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
+              <span className="text-green-700 font-medium">Figmaトークンを保存しました</span>
             </div>
-          )}
 
-          {/* トークン入力フォーム */}
-          <div className="mb-8">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Figma Personal Access Token
-            </label>
-            <input
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="figd_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-              disabled={isLoading}
-            />
-            <p className="mt-2 text-xs text-gray-500">
-              トークンは暗号化されて安全に保存されます
-            </p>
-          </div>
-
-          {/* アクションボタン */}
-          <div className="flex gap-3">
-            <button
-              onClick={handleSaveToken}
-              disabled={isLoading || !token.trim()}
-              className="flex-1 bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-            >
-              {isLoading ? '保存中...' : 'トークンを保存'}
-            </button>
-
-            {user?.hasFigmaToken && (
-              <button
-                onClick={handleDeleteToken}
-                disabled={isLoading}
-                className="bg-red-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-              >
-                削除
-              </button>
+            {user.figmaUserId && (
+              <div className="text-sm text-gray-600">
+                <p>Figma User ID: <code className="bg-gray-100 px-2 py-1 rounded">{user.figmaUserId}</code></p>
+              </div>
             )}
-          </div>
 
-          {/* トークン取得方法 */}
-          <div className="mt-8 p-6 bg-blue-50 rounded-lg border border-blue-200">
-            <h3 className="text-sm font-bold text-blue-900 mb-3">
-              📝 Figmaトークンの取得方法
-            </h3>
-            <ol className="text-sm text-blue-800 space-y-2 list-decimal list-inside">
-              <li>Figmaにログインして <a href="https://www.figma.com/settings" target="_blank" rel="noopener noreferrer" className="underline font-semibold">Settings</a> を開く</li>
-              <li>「Personal access tokens」セクションに移動</li>
-              <li>「Create new token」をクリック</li>
-              <li>トークン名を入力（例: FIGLEAN）</li>
-              <li>スコープで「File content - Read only」を選択</li>
-              <li>生成されたトークンをコピーして上記に貼り付け</li>
-            </ol>
-          </div>
-
-          {/* 戻るボタン */}
-          <div className="mt-8">
-            <button
-              onClick={() => router.push('/dashboard')}
-              className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
+            <Button
+              onClick={handleDeleteToken}
+              variant="secondary"
+              isLoading={isLoading}
+              className="bg-red-50 text-red-600 hover:bg-red-100"
             >
-              ← ダッシュボードに戻る
-            </button>
+              トークンを削除
+            </Button>
           </div>
+        ) : (
+          <div className="flex items-center">
+            <div className="w-3 h-3 bg-gray-400 rounded-full mr-3"></div>
+            <span className="text-gray-600">Figmaトークンが登録されていません</span>
+          </div>
+        )}
+      </div>
+
+      {/* =====================================
+          トークン登録フォーム
+          ===================================== */}
+      <div className="bg-white border rounded-lg p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          Figma Personal Access Token
+        </h2>
+
+        <div className="space-y-4">
+          <Input
+            label="Figma Personal Access Token"
+            type={showToken ? 'text' : 'password'}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="figd_xxxxxxxxxxxxxxxxxxxx"
+            required
+          />
+
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id="showToken"
+              checked={showToken}
+              onChange={(e) => setShowToken(e.target.checked)}
+              className="mr-2"
+            />
+            <label htmlFor="showToken" className="text-sm text-gray-600">
+              トークンを表示する
+            </label>
+          </div>
+
+          <Button
+            onClick={handleSaveToken}
+            isLoading={isLoading}
+            disabled={!token.trim() || isLoading}
+            className="w-full"
+          >
+            トークンを保存
+          </Button>
         </div>
-      </main>
+
+        {/* メッセージ表示 */}
+        {message && (
+          <div
+            className={`mt-4 p-4 rounded-lg ${
+              message.type === 'success'
+                ? 'bg-green-50 text-green-700 border border-green-200'
+                : 'bg-red-50 text-red-700 border border-red-200'
+            }`}
+          >
+            {message.text}
+          </div>
+        )}
+      </div>
+
+      {/* =====================================
+          トークン取得方法
+          ===================================== */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-blue-900 mb-4">
+          📖 Figma Personal Access Token の取得方法
+        </h2>
+
+        <ol className="list-decimal list-inside space-y-3 text-sm text-blue-800">
+          <li>
+            <strong>Figmaにログイン</strong>
+            <br />
+            <a
+              href="https://www.figma.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 underline ml-4"
+            >
+              https://www.figma.com/
+            </a>
+          </li>
+
+          <li>
+            <strong>Settings を開く</strong>
+            <br />
+            <span className="ml-4">右上のアイコン → Settings</span>
+          </li>
+
+          <li>
+            <strong>Personal access tokens に移動</strong>
+            <br />
+            <span className="ml-4">左メニュー → Personal access tokens</span>
+          </li>
+
+          <li>
+            <strong>新しいトークンを作成</strong>
+            <br />
+            <ul className="list-disc list-inside ml-8 mt-1 space-y-1">
+              <li>「Create new token」をクリック</li>
+              <li>トークン名: <code className="bg-white px-1">FIGLEAN</code></li>
+              <li>スコープ: <code className="bg-white px-1">File content (Read only)</code> を選択</li>
+              <li>「Create token」をクリック</li>
+            </ul>
+          </li>
+
+          <li>
+            <strong>トークンをコピー</strong>
+            <br />
+            <span className="ml-4">
+              <code className="bg-white px-1">figd_...</code> で始まるトークンをコピー
+            </span>
+            <br />
+            <span className="ml-4 text-xs text-red-600">
+              ⚠️ このトークンは二度と表示されないので、必ずコピーしてください
+            </span>
+          </li>
+
+          <li>
+            <strong>FIGLEANに設定</strong>
+            <br />
+            <span className="ml-4">上のフォームにトークンを貼り付けて「トークンを保存」</span>
+          </li>
+        </ol>
+
+        <div className="mt-4 p-3 bg-white border border-blue-300 rounded">
+          <p className="text-xs text-blue-700">
+            <strong>💡 ヒント:</strong> トークンは暗号化されてデータベースに保存されます。安全に管理されますのでご安心ください。
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

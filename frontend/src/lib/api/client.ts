@@ -1,6 +1,11 @@
 /**
  * FIGLEAN Frontend - APIクライアント基盤
  * AxiosベースのHTTPクライアント設定
+ * 
+ * 【修正内容】2026-01-14
+ * - API_URLとAPI_BASE_PATHの分離設定を統合
+ * - NEXT_PUBLIC_API_URLに一本化（推奨設定）
+ * - デフォルト値をlocalhost:3101/apiに変更
  */
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
@@ -10,9 +15,16 @@ import { ApiError } from '@/types/api';
 // 定数
 // =====================================
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://192.168.1.244:3101';
-const API_BASE_PATH = process.env.NEXT_PUBLIC_API_BASE_PATH || '/api';
-const BASE_URL = `${API_URL}${API_BASE_PATH}`;
+/**
+ * APIベースURL
+ * 環境変数NEXT_PUBLIC_API_URLから取得
+ * デフォルト: http://localhost:3101/api
+ * 
+ * 【重要】環境変数設定例：
+ * - 開発環境: NEXT_PUBLIC_API_URL=http://localhost:3101/api
+ * - 本番環境: NEXT_PUBLIC_API_URL=https://api.figlean.com/api
+ */
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3101/api';
 
 // =====================================
 // トークン管理
@@ -54,7 +66,7 @@ export const removeAuthToken = (): void => {
  * APIクライアントのAxiosインスタンス
  */
 const apiClient: AxiosInstance = axios.create({
-  baseURL: BASE_URL,
+  baseURL: API_BASE_URL,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -68,6 +80,7 @@ const apiClient: AxiosInstance = axios.create({
 /**
  * リクエスト前処理
  * - 認証トークンを自動付与
+ * - デバッグログ出力（開発環境のみ）
  */
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
@@ -79,7 +92,7 @@ apiClient.interceptors.request.use(
 
     // デバッグログ（開発環境のみ）
     if (process.env.NEXT_PUBLIC_ENV === 'development') {
-      console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`, {
+      console.log(`[API Request] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`, {
         headers: config.headers,
         data: config.data,
         params: config.params,
@@ -101,7 +114,8 @@ apiClient.interceptors.request.use(
 /**
  * レスポンス後処理
  * - エラーハンドリング
- * - 401エラー時のトークンクリア
+ * - 401エラー時のトークンクリア＆リダイレクト
+ * - デバッグログ出力（開発環境のみ）
  */
 apiClient.interceptors.response.use(
   (response) => {
@@ -121,6 +135,7 @@ apiClient.interceptors.response.use(
       message: error.message,
       status: error.response?.status,
       data: error.response?.data,
+      url: error.config?.url,
     });
 
     // 401エラー（認証エラー）の場合、トークンを削除してログインページへ
@@ -139,6 +154,13 @@ apiClient.interceptors.response.use(
 );
 
 // =====================================
+// 初期化ログ（開発環境のみ）
+// =====================================
+if (process.env.NEXT_PUBLIC_ENV === 'development') {
+  console.log('[API Client] Initialized with baseURL:', API_BASE_URL);
+}
+
+// =====================================
 // エクスポート
 // =====================================
 
@@ -150,6 +172,8 @@ export default apiClient;
 
 /**
  * APIエラーメッセージを取得
+ * @param error - エラーオブジェクト
+ * @returns エラーメッセージ
  */
 export const getErrorMessage = (error: unknown): string => {
   if (axios.isAxiosError(error)) {
@@ -173,6 +197,8 @@ export const getErrorMessage = (error: unknown): string => {
 
 /**
  * APIエラーコードを取得
+ * @param error - エラーオブジェクト
+ * @returns エラーコード（存在しない場合はundefined）
  */
 export const getErrorCode = (error: unknown): string | undefined => {
   if (axios.isAxiosError(error)) {

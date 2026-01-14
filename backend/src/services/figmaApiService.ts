@@ -2,6 +2,7 @@
 // backend/src/services/figmaApiService.ts
 // Figma APIクライアントサービス - FIGLEAN Phase 6
 // 作成日時: 2026年1月11日
+// 更新日時: 2026年1月13日 - getFigmaFiles実装完了
 // 依存関係: figmaTokenService, config/env, errors
 // 説明: Figma REST API v1との連携、ファイル取得、ノード走査
 // =====================================
@@ -217,6 +218,15 @@ export async function getFigmaUser(userId: string): Promise<FigmaUser> {
 /**
  * ユーザーのFigmaファイル一覧を取得
  * 
+ * Figma APIの制約:
+ * - Figma API v1には「全ファイル一覧」を取得するエンドポイントが存在しません
+ * - ファイル一覧を取得するには以下の方法があります:
+ *   1. チームIDとプロジェクトIDを使用してファイルを取得
+ *   2. Recent Filesを取得（ブラウザのlocalStorageに依存）
+ * 
+ * この実装では、ユーザーが所属する全チームの全プロジェクトから
+ * ファイルを収集する方式を採用しています。
+ * 
  * @param userId - FIGLEANユーザーID
  * @returns Figmaファイル一覧
  * @throws NotFoundError - トークンが見つからない
@@ -233,23 +243,172 @@ export async function getFigmaFiles(userId: string): Promise<FigmaFilesResponse>
   }
 
   try {
-    // Figma APIからファイルを取得
+    // =====================================
+    // ステップ1: ユーザー情報を取得（チーム情報を含む）
+    // =====================================
+    logger.info('Figmaユーザー情報取得（ファイル一覧用）', { userId });
     
-    // 1. ユーザー情報取得（チーム情報を含む）
-    const userData = await fetch(`${config.figmaApiBaseUrl}/me`, { ... });
-    
-    // 2. 各チームのプロジェクトを取得
+    const userResponse = await fetch(`${config.figmaApiBaseUrl}/me`, {
+      method: 'GET',
+      headers: createFigmaHeaders(token)
+    });
+
+    if (!userResponse.ok) {
+      await handleFigmaApiError(userResponse, 'ユーザー情報取得（ファイル一覧用）');
+    }
+
+    const userData = await userResponse.json() as any;
+
+    // チームが存在しない場合は空配列を返す
+    if (!userData.teams || userData.teams.length === 0) {
+      logger.warn('ユーザーがどのチームにも所属していません', { userId });
+      return { files: [] };
+    }
+
+    logger.info('所属チーム取得成功', { 
+      userId, 
+      teamsCount: userData.teams.length 
+    });
+
+    // =====================================
+    // ステップ2: 各チームのプロジェクト一覧を取得
+    // =====================================
+    const allFiles: FigmaFile[] = [];
+    const processedFileKeys = new Set<string>(); // 重複排除用
+
     for (const team of userData.teams) {
-      const projects = await fetch(`/teams/${team.id}/projects`, { ... });
-      
-      // 3. 各プロジェクトのファイルを取得
-      for (const project of projects) {
-        const files = await fetch(`/projects/${project.id}/files`, { ... });
-        allFiles.push(...files);
+      try {
+        logger.info('チームプロジェクト取得開始', { 
+          userId, 
+          teamId: team.id,
+          teamName: team.name 
+        });
+
+        // プロジェクト一覧を取得
+        const projectsResponse = await fetch(
+          `${config.figmaApiBaseUrl}/teams/${team.id}/projects`,
+          {
+            method: 'GET',
+            headers: createFigmaHeaders(token)
+          }
+        );
+
+        if (!projectsResponse.ok) {
+          logger.warn('プロジェクト一覧取得失敗（スキップ）', {
+            userId,
+            teamId: team.id,
+            status: projectsResponse.status
+          });
+          continue; // このチームはスキップして次へ
+        }
+
+        const projectsData = await projectsResponse.json() as any;
+
+        if (!projectsData.projects || projectsData.projects.length === 0) {
+          logger.info('プロジェクトなし（スキップ）', {
+            userId,
+            teamId: team.id
+          });
+          continue;
+        }
+
+        logger.info('プロジェクト一覧取得成功', {
+          userId,
+          teamId: team.id,
+          projectsCount: projectsData.projects.length
+        });
+
+        // =====================================
+        // ステップ3: 各プロジェクトのファイル一覧を取得
+        // =====================================
+        for (const project of projectsData.projects) {
+          try {
+            logger.info('プロジェクトファイル取得開始', {
+              userId,
+              projectId: project.id,
+              projectName: project.name
+            });
+
+            const filesResponse = await fetch(
+              `${config.figmaApiBaseUrl}/projects/${project.id}/files`,
+              {
+                method: 'GET',
+                headers: createFigmaHeaders(token)
+              }
+            );
+
+            if (!filesResponse.ok) {
+              logger.warn('ファイル一覧取得失敗（スキップ）', {
+                userId,
+                projectId: project.id,
+                status: filesResponse.status
+              });
+              continue;
+            }
+
+            const filesData = await filesResponse.json() as any;
+
+            if (!filesData.files || filesData.files.length === 0) {
+              logger.info('ファイルなし（スキップ）', {
+                userId,
+                projectId: project.id
+              });
+              continue;
+            }
+
+            // ファイルを収集（重複排除）
+            for (const file of filesData.files) {
+              if (!processedFileKeys.has(file.key)) {
+                allFiles.push({
+                  key: file.key,
+                  name: file.name,
+                  thumbnail_url: file.thumbnail_url || null,
+                  last_modified: file.last_modified
+                });
+                processedFileKeys.add(file.key);
+              }
+            }
+
+            logger.info('ファイル一覧取得成功', {
+              userId,
+              projectId: project.id,
+              filesCount: filesData.files.length
+            });
+
+          } catch (error) {
+            logger.warn('プロジェクトファイル取得エラー（スキップ）', {
+              userId,
+              projectId: project.id,
+              error
+            });
+            // エラーが発生してもこのプロジェクトはスキップして続行
+            continue;
+          }
+        }
+
+      } catch (error) {
+        logger.warn('チームプロジェクト取得エラー（スキップ）', {
+          userId,
+          teamId: team.id,
+          error
+        });
+        // エラーが発生してもこのチームはスキップして続行
+        continue;
       }
     }
-    
-    return { files: allFiles };
+
+    // =====================================
+    // ステップ4: 結果を返す
+    // =====================================
+    logger.info('Figmaファイル一覧取得成功', {
+      userId,
+      filesCount: allFiles.length
+    });
+
+    return {
+      files: allFiles
+    };
+
   } catch (error) {
     if (error instanceof ExternalServiceError || error instanceof NotFoundError) {
       throw error;
