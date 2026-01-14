@@ -110,7 +110,7 @@ logger.info('🔍 Analysis Routes 初期化');
  */
 router.get(
   '/:projectId',
-  (req: Request, res: Response, next: NextFunction) => {
+  (req: Request, _res: Response, next: NextFunction) => {
     logger.info('🟢 [ROUTE] /:projectId - リクエスト受信', { 
       projectId: req.params.projectId,
       method: req.method,
@@ -120,7 +120,7 @@ router.get(
     });
     next();
   },
-  authenticateToken,
+  authenticateToken(),
   (req: Request, _res: Response, next: NextFunction) => {
     logger.info('🟢 [ROUTE] /:projectId - 認証通過後', { 
       projectId: req.params.projectId,
@@ -223,7 +223,7 @@ router.get(
  */
 router.get(
   '/:projectId/violations',
-  (req: Request, res: Response, next: NextFunction) => {
+  (req: Request, _res: Response, next: NextFunction) => {
     logger.info('🟢 [ROUTE] /:projectId/violations - リクエスト受信', { 
       projectId: req.params.projectId,
       method: req.method,
@@ -232,7 +232,7 @@ router.get(
     });
     next();
   },
-  authenticateToken,
+  authenticateToken(),
   (req: Request, _res: Response, next: NextFunction) => {
     logger.info('🟢 [ROUTE] /:projectId/violations - 認証通過後', { 
       projectId: req.params.projectId,
@@ -347,7 +347,7 @@ router.get(
  */
 router.get(
   '/:projectId/predictions',
-  (req: Request, res: Response, next: NextFunction) => {
+  (req: Request, _res: Response, next: NextFunction) => {
     logger.info('🟢 [ROUTE] /:projectId/predictions - リクエスト受信', { 
       projectId: req.params.projectId,
       method: req.method,
@@ -356,7 +356,7 @@ router.get(
     });
     next();
   },
-  authenticateToken,
+  authenticateToken(),
   (req: Request, _res: Response, next: NextFunction) => {
     logger.info('🟢 [ROUTE] /:projectId/predictions - 認証通過後', { 
       projectId: req.params.projectId,
@@ -462,7 +462,7 @@ router.get(
  */
 router.get(
   '/:projectId/suggestions',
-  (req: Request, res: Response, next: NextFunction) => {
+  (req: Request, _res: Response, next: NextFunction) => {
     logger.info('🟢 [ROUTE] /:projectId/suggestions - リクエスト受信', { 
       projectId: req.params.projectId,
       method: req.method,
@@ -471,7 +471,7 @@ router.get(
     });
     next();
   },
-  authenticateToken,
+  authenticateToken(),
   (req: Request, _res: Response, next: NextFunction) => {
     logger.info('🟢 [ROUTE] /:projectId/suggestions - 認証通過後', { 
       projectId: req.params.projectId,
