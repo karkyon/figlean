@@ -8,12 +8,14 @@
  * - スコア100%要件説明
  * 
  * 作成日: 2026年1月14日 - Phase 2.5
+ * 更新日: 2026年1月14日 - logger機能追加
  */
 
 'use client';
 
 import { useState } from 'react';
 import type { Project } from '@/types/models';
+import { logger } from '@/lib/logger';
 
 interface GridPreviewCardProps {
   project: Project;
@@ -24,6 +26,16 @@ export default function GridPreviewCard({ project }: GridPreviewCardProps) {
 
   const canUseGrid = project.figleanScore === 100;
   const score = project.figleanScore || 0;
+
+  const handleToggleDetails = () => {
+    const newState = !showDetails;
+    setShowDetails(newState);
+    logger.component('GridPreviewCard', newState ? '詳細表示' : '詳細非表示', { 
+      projectId: project.id, 
+      canUseGrid, 
+      score 
+    });
+  };
 
   return (
     <div className="bg-white rounded-lg border p-6">
@@ -46,7 +58,7 @@ export default function GridPreviewCard({ project }: GridPreviewCardProps) {
           </p>
         </div>
         <button
-          onClick={() => setShowDetails(!showDetails)}
+          onClick={handleToggleDetails}
           className="text-sm text-blue-600 hover:text-blue-700"
         >
           {showDetails ? '詳細を隠す' : '詳細を表示'}

@@ -9,6 +9,7 @@
  * 
  * 修正履歴:
  * - 2026-01-12: フォーカス問題修正（Step Content を関数からJSXに変更）
+ * - 2026-01-14: logger機能追加
  */
 
 'use client';
@@ -21,6 +22,7 @@ import { Input } from '@/components/ui/Input';
 import { FigmaFileSelector } from './FigmaFileSelector';
 import { useProjectStore } from '@/store/projectStore';
 import { pollImportJobStatus } from '@/lib/api/figma';
+import { logger } from '@/lib/logger';
 import type { CreateProjectStep1Data, CreateProjectStep2Data } from '@/types/figma';
 
 // =====================================
@@ -85,6 +87,7 @@ export function CreateProjectModal({
   // モーダルが閉じられたらリセット
   useEffect(() => {
     if (!isOpen) {
+      logger.component('CreateProjectModal', 'モーダルクローズ - リセット');
       setCurrentStep(1);
       setStep1Data({ name: '', description: '', importSource: 'figma' });
       setStep2Data({
@@ -98,6 +101,8 @@ export function CreateProjectModal({
       setImportError(null);
       setImportProgress(0);
       setImportMessage('');
+    } else {
+      logger.component('CreateProjectModal', 'モーダルオープン');
     }
   }, [isOpen]);
 
@@ -106,6 +111,7 @@ export function CreateProjectModal({
   // =====================================
 
   const validateStep1 = (): boolean => {
+    logger.debug('Step1バリデーション開始', { name: step1Data.name });
     const newErrors: Record<string, string> = {};
 
     if (!step1Data.name.trim()) {
@@ -115,7 +121,15 @@ export function CreateProjectModal({
     }
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const isValid = Object.keys(newErrors).length === 0;
+    
+    if (!isValid) {
+      logger.warn('Step1バリデーション失敗', { errors: newErrors });
+    } else {
+      logger.success('Step1バリデーション成功');
+    }
+    
+    return isValid;
   };
 
   // =====================================
@@ -128,9 +142,11 @@ export function CreateProjectModal({
   const handleNext = () => {
     if (currentStep === 1) {
       if (validateStep1()) {
+        logger.component('CreateProjectModal', 'Step1→Step2遷移', { projectName: step1Data.name });
         setCurrentStep(2);
       }
     } else if (currentStep === 2) {
+      logger.component('CreateProjectModal', 'Step2→Step3遷移', { figmaFileKey: step2Data.figmaFileKey });
       setCurrentStep(3);
     }
   };
@@ -140,6 +156,7 @@ export function CreateProjectModal({
    */
   const handleBack = () => {
     if (currentStep > 1) {
+      logger.component('CreateProjectModal', `Step${currentStep}→Step${currentStep - 1}遷移`);
       setCurrentStep((prev) => (prev - 1) as WizardStep);
     }
   };
@@ -148,6 +165,7 @@ export function CreateProjectModal({
    * Figmaファイル選択時のハンドラー
    */
   const handleFileSelect = (file: any) => {
+    logger.component('CreateProjectModal', 'Figmaファイル選択', { fileKey: file.key });
     setStep2Data((prev) => ({
       ...prev,
       figmaFileKey: file.key,
@@ -160,12 +178,22 @@ export function CreateProjectModal({
    */
   const handleImport = async () => {
     try {
+      logger.component('CreateProjectModal', 'インポート開始', {
+        projectName: step1Data.name,
+        figmaFileKey: step2Data.figmaFileKey
+      });
+      
       setIsImporting(true);
       setImportError(null);
       setImportProgress(0);
       setImportMessage('プロジェクトを作成中...');
 
       // プロジェクト作成 + Figmaインポート開始
+      logger.api('POST', '/projects', {
+        name: step1Data.name,
+        figmaFileKey: step2Data.figmaFileKey
+      });
+      
       const { projectId, jobId } = await createProject({
         name: step1Data.name,
         description: step1Data.description,
@@ -173,14 +201,21 @@ export function CreateProjectModal({
         figmaFileUrl: step2Data.figmaFileUrl,
       });
 
+      logger.apiSuccess('POST', '/projects', { projectId, jobId });
       setImportProgress(20);
       setImportMessage('Figmaファイルをインポート中...');
 
       // ジョブステータスをポーリング
+      logger.info('ジョブポーリング開始', { jobId });
       await pollImportJobStatus(
         jobId,
         (status) => {
           // 進捗更新
+          logger.debug('ポーリング進捗更新', {
+            jobId,
+            percentage: status.progress.percentage,
+            step: status.progress.currentStep
+          });
           setImportProgress(status.progress.percentage);
           setImportMessage(status.progress.currentStep);
         },
@@ -189,20 +224,24 @@ export function CreateProjectModal({
 
       setImportProgress(100);
       setImportMessage('完了！');
+      logger.success('インポート完了', { projectId });
 
       // 成功時: プロジェクト詳細ページへ遷移
       setTimeout(() => {
+        logger.route('CreateProjectModal', `/projects/${projectId}`);
         onSuccess(projectId);
         onClose();
         router.push(`/projects/${projectId}`);
       }, 1000);
     } catch (error: any) {
-      console.error('プロジェクト作成エラー:', error);
-      setImportError(
-        error.response?.data?.error?.message ||
-          error.message ||
-          'プロジェクトの作成に失敗しました。もう一度お試しください。'
-      );
+      const errorMessage = error.response?.data?.error?.message ||
+        error.message ||
+        'プロジェクトの作成に失敗しました。もう一度お試しください。';
+      
+      logger.apiError('POST', '/projects', error);
+      logger.error('インポート失敗', error, { errorMessage });
+      
+      setImportError(errorMessage);
       setImportProgress(0);
     } finally {
       setIsImporting(false);
