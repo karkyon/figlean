@@ -26,6 +26,7 @@ import { SuggestionCard } from '@/components/analysis/SuggestionCard';
 import GeneratorTab from '@/components/project/GeneratorTab';
 import { Project, Violation, Prediction, Suggestion } from '@/types/models';
 import apiClient from '@/lib/api/client';
+import { logger } from '@/lib/logger';
 
 // =====================================
 // ローカル型定義（API専用）
@@ -72,11 +73,13 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     if (projectId) {
+      logger.component('ProjectDetailPage', 'Mount', { projectId });
       loadProject();
     }
   }, [projectId]);
 
   useEffect(() => {
+    logger.component('ProjectDetailPage', `Tab Changed: ${activeTab}`, { projectId, activeTab });
     if (activeTab !== 'overview' && activeTab !== 'generator') {
       loadTabData();
     }
@@ -84,22 +87,34 @@ export default function ProjectDetailPage() {
 
   const loadProject = async () => {
     try {
+      logger.info('プロジェクト読み込み開始', { projectId });
       setIsLoading(true);
       setError(null);
 
+      logger.api('GET', `/projects/${projectId}`);
       const projectResponse = await apiClient.get(`/projects/${projectId}`);
       setProject(projectResponse.data.data);
+      logger.apiSuccess('GET', `/projects/${projectId}`, { project: projectResponse.data.data });
 
       try {
+        logger.api('GET', `/analysis/${projectId}`);
         const analysisResponse = await apiClient.get(`/analysis/${projectId}`);
         setAnalysisResult(analysisResponse.data.data);
+        logger.apiSuccess('GET', `/analysis/${projectId}`, { analysisResult: analysisResponse.data.data });
       } catch (analysisError: any) {
         if (analysisError.response?.status !== 404) {
+          logger.apiError('GET', `/analysis/${projectId}`, analysisError);
           console.error('Failed to load analysis:', analysisError);
+        } else {
+          logger.warn('解析結果が見つかりません', { projectId });
         }
       }
+
+      logger.success('プロジェクト読み込み完了', { projectId });
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || 'プロジェクトの読み込みに失敗しました');
+      const errorMessage = err.response?.data?.error?.message || 'プロジェクトの読み込みに失敗しました';
+      logger.error('プロジェクト読み込み失敗', err, { projectId, errorMessage });
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -109,19 +124,29 @@ export default function ProjectDetailPage() {
     if (!projectId) return;
 
     try {
+      logger.info(`タブデータ読み込み開始: ${activeTab}`, { projectId, activeTab });
       setIsLoadingTab(true);
 
       if (activeTab === 'violations') {
+        logger.api('GET', `/analysis/${projectId}/violations`);
         const response = await apiClient.get(`/analysis/${projectId}/violations`);
         setViolations(response.data.data.violations || []);
+        logger.apiSuccess('GET', `/analysis/${projectId}/violations`, { count: response.data.data.violations?.length || 0 });
       } else if (activeTab === 'predictions') {
+        logger.api('GET', `/analysis/${projectId}/predictions`);
         const response = await apiClient.get(`/analysis/${projectId}/predictions`);
         setPredictions(response.data.data.predictions || []);
+        logger.apiSuccess('GET', `/analysis/${projectId}/predictions`, { count: response.data.data.predictions?.length || 0 });
       } else if (activeTab === 'suggestions') {
+        logger.api('GET', `/analysis/${projectId}/suggestions`);
         const response = await apiClient.get(`/analysis/${projectId}/suggestions`);
         setSuggestions(response.data.data.suggestions || []);
+        logger.apiSuccess('GET', `/analysis/${projectId}/suggestions`, { count: response.data.data.suggestions?.length || 0 });
       }
+
+      logger.success(`タブデータ読み込み完了: ${activeTab}`, { projectId, activeTab });
     } catch (err: any) {
+      logger.apiError('GET', `/analysis/${projectId}/${activeTab}`, err);
       console.error(`Failed to load ${activeTab}:`, err);
     } finally {
       setIsLoadingTab(false);

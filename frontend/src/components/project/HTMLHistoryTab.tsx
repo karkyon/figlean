@@ -17,6 +17,7 @@ import { useState, useEffect } from 'react';
 import type { Project } from '@/types/models';
 import type { HTMLHistoryItem, HTMLHistoryResponse, Framework } from '@/types/html';
 import { getHTMLHistory, deleteGeneratedHTML, generateHTML } from '@/lib/api/html';
+import { logger } from '@/lib/logger';
 
 interface HTMLHistoryTabProps {
   project: Project;
@@ -38,13 +39,17 @@ export default function HTMLHistoryTab({ project }: HTMLHistoryTabProps) {
   });
 
   useEffect(() => {
+    logger.component('HTMLHistoryTab', 'Mount', { projectId: project.id });
     loadHistory();
   }, [project.id, pagination.offset]);
 
   const loadHistory = async () => {
     try {
+      logger.info('HTML履歴読み込み開始', { projectId: project.id, offset: pagination.offset });
       setLoading(true);
       setError(null);
+
+      logger.api('GET', `/html/${project.id}/history`, { limit: pagination.limit, offset: pagination.offset });
       const response: HTMLHistoryResponse = await getHTMLHistory(
         project.id,
         pagination.limit,
@@ -52,25 +57,37 @@ export default function HTMLHistoryTab({ project }: HTMLHistoryTabProps) {
       );
       setHistory(response.history);
       setPagination(response.pagination);
+      logger.apiSuccess('GET', `/html/${project.id}/history`, { count: response.history.length, total: response.pagination.total });
+      logger.success('HTML履歴読み込み完了', { projectId: project.id, count: response.history.length });
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || '履歴の取得に失敗しました');
+      const errorMessage = err.response?.data?.error?.message || '履歴の取得に失敗しました';
+      logger.apiError('GET', `/html/${project.id}/history`, err);
+      logger.error('HTML履歴読み込み失敗', err, { projectId: project.id, errorMessage });
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
   const handleRegenerate = async (item: HTMLHistoryItem) => {
+    logger.component('HTMLHistoryTab', '再生成開始', { generatedId: item.id, framework: item.framework });
     setRegenerating(true);
     try {
+      logger.api('POST', `/html/generate/${project.id}`, { framework: item.framework });
       await generateHTML(project.id, {
         framework: item.framework,
         includeResponsive: true,
         includeGrid: false,
       });
+      logger.apiSuccess('POST', `/html/generate/${project.id}`);
+      logger.success('再生成完了', { projectId: project.id });
       await loadHistory();
       setSelectedItem(null);
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || '再生成に失敗しました');
+      const errorMessage = err.response?.data?.error?.message || '再生成に失敗しました';
+      logger.apiError('POST', `/html/generate/${project.id}`, err);
+      logger.error('再生成失敗', err, { projectId: project.id, errorMessage });
+      setError(errorMessage);
     } finally {
       setRegenerating(false);
     }
@@ -79,15 +96,22 @@ export default function HTMLHistoryTab({ project }: HTMLHistoryTabProps) {
   const handleDelete = async (id: string) => {
     if (!confirm('この履歴を削除しますか？')) return;
     
+    logger.component('HTMLHistoryTab', '履歴削除開始', { generatedId: id });
     setDeletingId(id);
     try {
+      logger.api('DELETE', `/html/${id}`);
       await deleteGeneratedHTML(id);
+      logger.apiSuccess('DELETE', `/html/${id}`);
+      logger.success('履歴削除完了', { generatedId: id });
       await loadHistory();
       if (selectedItem?.id === id) {
         setSelectedItem(null);
       }
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || '削除に失敗しました');
+      const errorMessage = err.response?.data?.error?.message || '削除に失敗しました';
+      logger.apiError('DELETE', `/html/${id}`, err);
+      logger.error('履歴削除失敗', err, { generatedId: id, errorMessage });
+      setError(errorMessage);
     } finally {
       setDeletingId(null);
     }
@@ -95,6 +119,7 @@ export default function HTMLHistoryTab({ project }: HTMLHistoryTabProps) {
 
   const handleNextPage = () => {
     if (pagination.hasMore) {
+      logger.component('HTMLHistoryTab', '次ページ', { currentOffset: pagination.offset, nextOffset: pagination.offset + pagination.limit });
       setPagination(prev => ({
         ...prev,
         offset: prev.offset + prev.limit
@@ -104,6 +129,7 @@ export default function HTMLHistoryTab({ project }: HTMLHistoryTabProps) {
 
   const handlePrevPage = () => {
     if (pagination.offset > 0) {
+      logger.component('HTMLHistoryTab', '前ページ', { currentOffset: pagination.offset, prevOffset: Math.max(0, pagination.offset - pagination.limit) });
       setPagination(prev => ({
         ...prev,
         offset: Math.max(0, prev.offset - prev.limit)

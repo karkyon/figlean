@@ -26,6 +26,7 @@ import type {
 import { generateHTML, downloadHTML } from '@/lib/api/html';
 import HTMLHistoryTab from './HTMLHistoryTab';
 import GridPreviewCard from './GridPreviewCard';
+import { logger } from '@/lib/logger';
 
 interface GeneratorTabProps {
   project: Project;
@@ -54,6 +55,7 @@ export default function GeneratorTab({ project }: GeneratorTabProps) {
   const canUseGrid = project.figleanScore === 100;
 
   const handleGenerate = async () => {
+    logger.component('GeneratorTab', 'HTML生成開始', { projectId: project.id, framework, includeResponsive, includeGrid });
     setGenerating(true);
     setError(null);
     setResult(null);
@@ -66,10 +68,20 @@ export default function GeneratorTab({ project }: GeneratorTabProps) {
         breakpoints: customBreakpoints ? breakpoints : undefined
       };
 
+      logger.api('POST', `/html/generate/${project.id}`, request);
       const response = await generateHTML(project.id, request);
       setResult(response);
+      logger.apiSuccess('POST', `/html/generate/${project.id}`, {
+        generatedId: response.generatedId,
+        metadata: response.metadata,
+        generationTimeMs: response.generationTimeMs
+      });
+      logger.success('HTML生成完了', { projectId: project.id, generationTimeMs: response.generationTimeMs });
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || 'HTML生成に失敗しました');
+      const errorMessage = err.response?.data?.error?.message || 'HTML生成に失敗しました';
+      logger.apiError('POST', `/html/generate/${project.id}`, err);
+      logger.error('HTML生成失敗', err, { projectId: project.id, errorMessage });
+      setError(errorMessage);
     } finally {
       setGenerating(false);
     }
@@ -79,6 +91,8 @@ export default function GeneratorTab({ project }: GeneratorTabProps) {
     if (!result) return;
 
     try {
+      logger.component('GeneratorTab', 'HTMLダウンロード開始', { projectId: project.id });
+      logger.api('GET', `/html/${project.id}/download`);
       const blob = await downloadHTML(project.id);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -88,8 +102,12 @@ export default function GeneratorTab({ project }: GeneratorTabProps) {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      logger.success('HTMLダウンロード完了', { projectId: project.id, filename: a.download });
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || 'ダウンロードに失敗しました');
+      const errorMessage = err.response?.data?.error?.message || 'ダウンロードに失敗しました';
+      logger.apiError('GET', `/html/${project.id}/download`, err);
+      logger.error('HTMLダウンロード失敗', err, { projectId: project.id, errorMessage });
+      setError(errorMessage);
     }
   };
 
