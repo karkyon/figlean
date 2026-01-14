@@ -2,12 +2,12 @@
 // backend/src/services/predictionService.ts
 // 崩壊予測サービス - FIGLEAN Phase 8 (UX改善版)
 // 作成日時: 2026年1月12日
-// 更新日時: 2026年1月12日 - UX改善（データ未生成時のメッセージ）
+// 更新日時: 2026年1月14日 - Named Export対応
 // 依存関係: lib/prisma, errors, utils/logger
-// 説明: レスポンシブ崩壊予測・ブレークポイント検証
+// 説明: レスポンシブブレークポイント崩壊予測生成
 // =====================================
 
-import { PrismaClient, BreakPrediction, Severity } from '@prisma/client';
+import { PrismaClient, BreakPrediction, RuleViolation } from '@prisma/client';
 import { NotFoundError, ValidationError } from '../errors';
 import logger from '../utils/logger';
 
@@ -18,20 +18,25 @@ const prisma = new PrismaClient();
 // =====================================
 
 /**
- * ブレークポイント種別
+ * 崩壊タイプ
+ */
+export type BreakType = 
+  | 'HORIZONTAL_SCROLL'
+  | 'FLEX_WRAP_FAILURE'
+  | 'TEXT_OVERFLOW'
+  | 'SIZE_MISMATCH'
+  | 'HEIGHT_MISMATCH'
+  | 'FIXED_WIDTH_ISSUE';
+
+/**
+ * ブレークポイント
  */
 export type BreakpointType = 'mobile' | 'tablet' | 'desktop';
 
 /**
- * 崩壊タイプ
+ * 重要度
  */
-export type BreakType = 
-  | 'HORIZONTAL_SCROLL'      // 横スクロール発生
-  | 'FLEX_WRAP_FAILURE'      // Flex折り返し失敗
-  | 'TEXT_OVERFLOW'          // テキストオーバーフロー
-  | 'SIZE_MISMATCH'          // サイズ不一致
-  | 'HEIGHT_MISMATCH'        // 高さ不一致
-  | 'FIXED_WIDTH_ISSUE';     // 固定幅問題
+export type Severity = 'CRITICAL' | 'MAJOR' | 'MINOR';
 
 /**
  * レスポンシブ問題サマリー
@@ -387,13 +392,3 @@ export async function clearPredictions(projectId: string): Promise<number> {
 
   return result.count;
 }
-
-// =====================================
-// エクスポート
-// =====================================
-
-export default {
-  getPredictions,
-  generatePredictions,
-  clearPredictions
-};

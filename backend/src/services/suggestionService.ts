@@ -2,7 +2,7 @@
 // backend/src/services/suggestionService.ts
 // 改善提案サービス - FIGLEAN Phase 8 (UX改善版)
 // 作成日時: 2026年1月12日
-// 更新日時: 2026年1月12日 - UX改善（データ未生成時のメッセージ）
+// 更新日時: 2026年1月14日 - Named Export対応
 // 依存関係: lib/prisma, errors, utils/logger
 // 説明: 優先度付き改善提案生成・スコア改善シミュレーション
 // =====================================
@@ -53,7 +53,7 @@ export interface SuggestionResponse {
 }
 
 // =====================================
-// 改善提案取得
+// 改善提案ロジック
 // =====================================
 
 /**
@@ -111,7 +111,7 @@ export async function getSuggestions(
   // 改善提案データ取得
   const suggestions = await prisma.improvementSuggestion.findMany({
     where: { projectId },
-    orderBy: { priority: 'asc' }  // 優先度順
+    orderBy: { priority: 'asc' }
   });
 
   // データが存在しない場合
@@ -428,13 +428,3 @@ export async function clearSuggestions(projectId: string): Promise<number> {
 
   return result.count;
 }
-
-// =====================================
-// エクスポート
-// =====================================
-
-export default {
-  getSuggestions,
-  generateSuggestions,
-  clearSuggestions
-};

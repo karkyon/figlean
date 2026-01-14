@@ -346,10 +346,10 @@ export default function ProjectDetailPage() {
       <div className="bg-white border-b mb-6">
         <nav className="flex">
           {[
-            { id: 'overview', label: '📊 Overview', count: null },
-            { id: 'violations', label: '⚠️ Violations', count: violations.length },
-            { id: 'predictions', label: '🔮 Predictions', count: predictions.length },
-            { id: 'suggestions', label: '💡 Suggestions', count: suggestions.length },
+            { id: 'overview', label: '📊 概要', count: null },
+            { id: 'violations', label: '⚠️ ルール違反', count: violations.length },
+            { id: 'predictions', label: '🔮 崩壊予測', count: predictions.length },
+            { id: 'suggestions', label: '💡 改善提案', count: suggestions.length },
           ].map((tab) => (
             <button
               key={tab.id}

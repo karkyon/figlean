@@ -2,6 +2,7 @@
 // backend/src/routes/analysis.routes.ts
 // 診断APIルーティング - FIGLEAN Phase 6.6
 // 作成日時: 2026年1月11日
+// 更新日時: 2026年1月14日 - ログ出力追加（既存機能100%保持）
 // 依存関係: express, analysisController, authenticateToken
 // 説明: 診断結果取得APIのルーティング設定（Swagger完全記述）
 // =====================================
@@ -9,8 +10,14 @@
 import { Router } from 'express';
 import * as analysisController from '../controllers/analysisController';
 import { authenticateToken } from '../middlewares/authenticate';
+import logger from '../utils/logger';
 
 const router = Router();
+
+// =====================================
+// 初期化ログ
+// =====================================
+logger.info('🔍 Analysis Routes 初期化');
 
 // =====================================
 // 実装済みエンドポイント
@@ -99,6 +106,13 @@ const router = Router();
 router.get(
   '/:projectId',
   authenticateToken,
+  (req, res, next) => {
+    logger.info('[ANALYSIS API] 診断サマリー取得開始', { 
+      projectId: req.params.projectId,
+      userId: (req as any).user?.userId 
+    });
+    next();
+  },
   analysisController.getAnalysisSummary
 );
 
@@ -194,6 +208,15 @@ router.get(
 router.get(
   '/:projectId/violations',
   authenticateToken,
+  (req, res, next) => {
+    logger.info('[ANALYSIS API] ルール違反取得開始', { 
+      projectId: req.params.projectId,
+      userId: (req as any).user?.userId,
+      severity: req.query.severity,
+      limit: req.query.limit
+    });
+    next();
+  },
   analysisController.getViolations
 );
 
@@ -299,6 +322,13 @@ router.get(
 router.get(
   '/:projectId/predictions',
   authenticateToken,
+  (req, res, next) => {
+    logger.info('[ANALYSIS API] 崩壊予測取得開始', { 
+      projectId: req.params.projectId,
+      userId: (req as any).user?.userId 
+    });
+    next();
+  },
   analysisController.getPredictions
 );
 
@@ -397,11 +427,27 @@ router.get(
 router.get(
   '/:projectId/suggestions',
   authenticateToken,
+  (req, res, next) => {
+    logger.info('[ANALYSIS API] 改善提案取得開始', { 
+      projectId: req.params.projectId,
+      userId: (req as any).user?.userId 
+    });
+    next();
+  },
   analysisController.getSuggestions
 );
 
 // =====================================
 // Export
 // =====================================
+
+logger.info('📊 Analysis エンドポイント登録完了:', {
+  endpoints: [
+    'GET  /api/analysis/:projectId',
+    'GET  /api/analysis/:projectId/violations',
+    'GET  /api/analysis/:projectId/predictions',
+    'GET  /api/analysis/:projectId/suggestions'
+  ]
+});
 
 export default router;
