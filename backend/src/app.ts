@@ -87,6 +87,22 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestId);
 
 // =====================================
+// 🔍 グローバルリクエストログ（徹底デバッグ用）
+// =====================================
+app.use((req, _res, next) => {
+  console.log('🔍 [GLOBAL] リクエスト受信', {
+    method: req.method,
+    url: req.url,
+    path: req.path,
+    baseUrl: req.baseUrl,
+    originalUrl: req.originalUrl,
+    headers: req.headers,
+    timestamp: new Date().toISOString()
+  });
+  next();
+});
+
+// =====================================
 // Logging(開発環境のみ)
 // =====================================
 if (config.nodeEnv === 'development') {

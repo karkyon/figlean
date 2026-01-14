@@ -88,7 +88,12 @@ const extractToken = (authHeader: string | undefined): string | null => {
  */
 export function authenticateToken(options: AuthMiddlewareOptions = {}) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    logger.middleware('authenticateToken', '開始', { url: req.originalUrl });
+    logger.info('🔐 [AUTH MIDDLEWARE] 開始', { 
+      url: req.originalUrl,
+      method: req.method,
+      headers: req.headers,
+      timestamp: new Date().toISOString()
+    });
 
     try {
       // JWT設定の事前検証
@@ -188,12 +193,17 @@ export function authenticateToken(options: AuthMiddlewareOptions = {}) {
 
       req.user = authenticatedUser;
 
-      logger.middleware('authenticateToken', '認証成功', {
+      logger.info('🔐 [AUTH MIDDLEWARE] 認証成功 - next()呼び出し', {
         userId: authenticatedUser.userId,
-        plan: authenticatedUser.plan
+        plan: authenticatedUser.plan,
+        timestamp: new Date().toISOString()
       });
 
       next();
+      
+      logger.info('🔐 [AUTH MIDDLEWARE] next()実行完了', {
+        timestamp: new Date().toISOString()
+      });
     } catch (error) {
       logger.error('認証ミドルウェアエラー', error as Error);
       sendError(

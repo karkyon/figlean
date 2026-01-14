@@ -110,11 +110,22 @@ logger.info('🔍 Analysis Routes 初期化');
  */
 router.get(
   '/:projectId',
+  (req: Request, res: Response, next: NextFunction) => {
+    logger.info('🟢 [ROUTE] /:projectId - リクエスト受信', { 
+      projectId: req.params.projectId,
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
+      timestamp: new Date().toISOString()
+    });
+    next();
+  },
   authenticateToken,
   (req: Request, _res: Response, next: NextFunction) => {
-    logger.info('[ANALYSIS API] 診断サマリー取得開始', { 
+    logger.info('🟢 [ROUTE] /:projectId - 認証通過後', { 
       projectId: req.params.projectId,
-      userId: (req as any).user?.userId 
+      userId: (req as any).user?.userId,
+      timestamp: new Date().toISOString()
     });
     next();
   },
@@ -212,13 +223,23 @@ router.get(
  */
 router.get(
   '/:projectId/violations',
+  (req: Request, res: Response, next: NextFunction) => {
+    logger.info('🟢 [ROUTE] /:projectId/violations - リクエスト受信', { 
+      projectId: req.params.projectId,
+      method: req.method,
+      url: req.url,
+      timestamp: new Date().toISOString()
+    });
+    next();
+  },
   authenticateToken,
   (req: Request, _res: Response, next: NextFunction) => {
-    logger.info('[ANALYSIS API] ルール違反取得開始', { 
+    logger.info('🟢 [ROUTE] /:projectId/violations - 認証通過後', { 
       projectId: req.params.projectId,
       userId: (req as any).user?.userId,
       severity: req.query.severity,
-      limit: req.query.limit
+      limit: req.query.limit,
+      timestamp: new Date().toISOString()
     });
     next();
   },
@@ -326,11 +347,21 @@ router.get(
  */
 router.get(
   '/:projectId/predictions',
+  (req: Request, res: Response, next: NextFunction) => {
+    logger.info('🟢 [ROUTE] /:projectId/predictions - リクエスト受信', { 
+      projectId: req.params.projectId,
+      method: req.method,
+      url: req.url,
+      timestamp: new Date().toISOString()
+    });
+    next();
+  },
   authenticateToken,
   (req: Request, _res: Response, next: NextFunction) => {
-    logger.info('[ANALYSIS API] 崩壊予測取得開始', { 
+    logger.info('🟢 [ROUTE] /:projectId/predictions - 認証通過後', { 
       projectId: req.params.projectId,
-      userId: (req as any).user?.userId 
+      userId: (req as any).user?.userId,
+      timestamp: new Date().toISOString()
     });
     next();
   },
@@ -431,11 +462,21 @@ router.get(
  */
 router.get(
   '/:projectId/suggestions',
+  (req: Request, res: Response, next: NextFunction) => {
+    logger.info('🟢 [ROUTE] /:projectId/suggestions - リクエスト受信', { 
+      projectId: req.params.projectId,
+      method: req.method,
+      url: req.url,
+      timestamp: new Date().toISOString()
+    });
+    next();
+  },
   authenticateToken,
   (req: Request, _res: Response, next: NextFunction) => {
-    logger.info('[ANALYSIS API] 改善提案取得開始', { 
+    logger.info('🟢 [ROUTE] /:projectId/suggestions - 認証通過後', { 
       projectId: req.params.projectId,
-      userId: (req as any).user?.userId 
+      userId: (req as any).user?.userId,
+      timestamp: new Date().toISOString()
     });
     next();
   },

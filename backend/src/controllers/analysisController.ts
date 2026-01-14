@@ -70,7 +70,7 @@ export async function getAnalysisSummary(
       score: analysisResult.figleanScore 
     });
 
-    res.json({
+    const responseData = {
       success: true,
       data: {
         figleanScore: analysisResult.figleanScore,
@@ -88,6 +88,18 @@ export async function getAnalysisSummary(
         totalFrames: analysisResult.totalFrames,
         analyzedAt: analysisResult.createdAt
       }
+    };
+
+    logger.info('📤 [CONTROLLER] レスポンス送信直前', {
+      projectId,
+      responseData: JSON.stringify(responseData),
+      timestamp: new Date().toISOString()
+    });
+
+    res.json(responseData);
+    
+    logger.info('📤 [CONTROLLER] レスポンス送信完了', {
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     logger.error('❌ [CONTROLLER] 診断サマリー取得エラー', { error, requestId: req.id });
