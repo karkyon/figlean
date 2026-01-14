@@ -25,6 +25,7 @@ import projectRoutes from './routes/project.routes';
 import figmaRoutes from './routes/figma.routes';
 import analysisRoutes from './routes/analysis.routes';
 import figmaCommentRoutes from './routes/figmaComment.routes';
+import htmlRoutes from './routes/html.routes';
 
 // Config
 import { config } from './config/env';
@@ -152,6 +153,9 @@ app.use('/api/figma/comments', figmaCommentRoutes);
 
 // Figma連携（追加のレート制限）
 app.use('/api/figma', figmaApiRateLimiter, figmaRoutes);
+
+// HTML生成機能
+app.unsubscribe('/api/html', htmlRoutes);
 
 // =====================================
 // API情報エンドポイント
