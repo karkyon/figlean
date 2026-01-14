@@ -223,33 +223,33 @@ export default function DashboardPage() {
                         <h3 className="text-base font-bold text-gray-900 flex-1 pr-2">
                           {project.name}
                         </h3>
-                        {project.score !== null && (
+                        {project.figleanScore !== null && (
                           <div
                             className="text-2xl font-black"
-                            style={{ color: getScoreColor(project.score) }}
+                            style={{ color: getScoreColor(project.figleanScore) }}
                           >
-                            {project.score}
+                            {project.figleanScore}
                           </div>
                         )}
                       </div>
 
                       <div className="text-xs text-gray-600 mb-3">
                         {project.figmaFileName || 'Figma File'} ・{' '}
-                        {getStatusLabel(project.status)}
+                        {getStatusLabel(project.analysisStatus)}
                       </div>
 
                       <div className="flex flex-wrap gap-2">
-                        {project.score !== null && project.score >= 90 && (
+                        {project.figleanScore !== null && project.figleanScore >= 90 && (
                           <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
                             HTML生成可能
                           </span>
                         )}
-                        {project.score !== null && project.score === 100 && (
+                        {project.figleanScore !== null && project.figleanScore === 100 && (
                           <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
                             Grid生成可能
                           </span>
                         )}
-                        {project.status === 'COMPLETED' && (
+                        {project.analysisStatus === 'COMPLETED' && (
                           <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
                             診断完了
                           </span>

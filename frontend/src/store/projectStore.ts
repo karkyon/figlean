@@ -110,8 +110,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
       // 2. Figmaインポート開始
       const importRequest: FigmaImportRequest = {
-        projectId: project.id,
-        fileKey: data.figmaFileKey,
+        projectName: data.name,
+        description: data.description,
+        figmaFileKey: data.figmaFileKey,
+        figmaFileUrl: data.figmaFileUrl,
         analyzeAll: true,
       };
       const importResponse = await figmaApi.importFigmaFile(importRequest);

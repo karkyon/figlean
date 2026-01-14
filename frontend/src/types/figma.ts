@@ -1,16 +1,18 @@
 /**
- * FIGLEAN Frontend - Figma関連型定義
- * ファイルパス: frontend/src/types/figma.ts
+ * FIGLEAN Frontend - Figma API専用型定義（修正版）
+ * Figma REST API v1のレスポンス形式に完全一致
+ * 更新日時: 2026年1月14日 - models.tsとの重複を完全削除
  */
 
 // =====================================
-// Figmaファイル関連
+// Figma API Response Types
 // =====================================
 
 /**
- * Figmaファイル情報
+ * Figma APIから返されるファイル情報（スネークケース）
+ * Backendのfigma ApiServiceが返す実際の形式
  */
-export interface FigmaFile {
+export interface FigmaFileRaw {
   key: string;
   name: string;
   thumbnail_url: string | null;
@@ -18,26 +20,28 @@ export interface FigmaFile {
 }
 
 /**
- * Figmaファイル一覧レスポンス
+ * Figma APIファイル一覧レスポンス
  */
 export interface FigmaFilesResponse {
-  files: FigmaFile[];
+  files: FigmaFileRaw[];
 }
 
 /**
- * Figmaファイル詳細
+ * Figma APIから返されるファイル詳細（実際のAPI形式）
  */
-export interface FigmaFileDetail {
+export interface FigmaFileDetailRaw {
   name: string;
   lastModified: string;
   thumbnailUrl: string | null;
   version: string;
   document: FigmaNode;
+  components?: Record<string, any>;
+  componentSets?: Record<string, any>;
   schemaVersion: number;
 }
 
 /**
- * Figmaノード
+ * Figmaノード（実際のAPI形式）
  */
 export interface FigmaNode {
   id: string;
@@ -46,10 +50,24 @@ export interface FigmaNode {
   children?: FigmaNode[];
   visible?: boolean;
   locked?: boolean;
+  layoutMode?: 'NONE' | 'HORIZONTAL' | 'VERTICAL';
+  layoutWrap?: 'NO_WRAP' | 'WRAP';
+  primaryAxisSizingMode?: 'FIXED' | 'AUTO';
+  counterAxisSizingMode?: 'FIXED' | 'AUTO';
+  absoluteBoundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  constraints?: {
+    horizontal: string;
+    vertical: string;
+  };
 }
 
 /**
- * Figmaユーザー情報
+ * Figmaユーザー情報（実際のAPI形式）
  */
 export interface FigmaUser {
   id: string;
@@ -68,14 +86,55 @@ export interface FigmaFrame {
   parent: string;
 }
 
+// =====================================
+// Frontend用変換済み型（キャメルケース）
+// =====================================
+
 /**
- * Figmaインポートリクエスト
+ * Frontend表示用のFigmaファイル情報
+ * FigmaFileRaw → FigmaFile に変換して使用
+ */
+export interface FigmaFile {
+  key: string;
+  name: string;
+  thumbnailUrl: string | null;
+  lastModified: string;
+}
+
+/**
+ * Frontend表示用のFigmaファイル詳細
+ */
+export interface FigmaFileDetail {
+  key: string;
+  name: string;
+  pages: FigmaPage[];
+}
+
+/**
+ * Figmaページ情報
+ */
+export interface FigmaPage {
+  id: string;
+  name: string;
+  frameCount: number;
+}
+
+// =====================================
+// Import/Job Types
+// =====================================
+
+/**
+ * Figmaインポートリクエスト（Backend API用）
  */
 export interface FigmaImportRequest {
-  projectId: string;
-  fileKey: string;
-  pageIds?: string[];
-  analyzeAll: boolean;
+  projectName: string;
+  description?: string;
+  figmaFileKey: string;
+  figmaFileUrl?: string;
+  figmaFileName?: string;
+  figmaNodeId?: string;
+  selectedPages?: string[];
+  analyzeAll?: boolean;
 }
 
 /**
@@ -85,6 +144,20 @@ export interface FigmaImportResponse {
   jobId: string;
   status: 'IMPORTING' | 'ANALYZING' | 'COMPLETED' | 'FAILED';
   message: string;
+}
+
+/**
+ * インポート進捗情報
+ */
+export interface ImportProgress {
+  jobId: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  progress: number;
+  currentStep: string;
+  totalSteps: number;
+  completedSteps: number;
+  message: string | null;
+  errorMessage: string | null;
 }
 
 /**
@@ -104,7 +177,7 @@ export interface JobStatus {
 }
 
 // =====================================
-// プロジェクト作成関連
+// Project Creation Types
 // =====================================
 
 /**
@@ -131,4 +204,20 @@ export interface CreateProjectStep2Data {
  */
 export interface CreateProjectFullData extends CreateProjectStep1Data, CreateProjectStep2Data {
   analyzeAll: boolean;
+}
+
+// =====================================
+// Utility Functions (型変換用)
+// =====================================
+
+/**
+ * Figma API形式 → Frontend形式に変換
+ */
+export function convertFigmaFile(raw: FigmaFileRaw): FigmaFile {
+  return {
+    key: raw.key,
+    name: raw.name,
+    thumbnailUrl: raw.thumbnail_url,
+    lastModified: raw.last_modified,
+  };
 }
