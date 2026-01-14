@@ -1,19 +1,18 @@
 /**
- * FIGLEAN Frontend - プロジェクト詳細ページ（Phase 1.6-1.8完全版・Phase 2 Generator追加）
+ * FIGLEAN Frontend - プロジェクト詳細ページ（日本語化版）
  * ファイルパス: frontend/src/app/(protected)/projects/[id]/page.tsx
  * 
  * 機能:
  * - プロジェクト基本情報表示
  * - FIGLEAN適合度スコア表示
- * - タブナビゲーション（Overview / Violations / Predictions / Suggestions / Generator）
+ * - タブナビゲーション（概要 / 違反 / 崩壊予測 / 改善提案 / 生成）
  * - 診断結果カード表示
  * - HTML生成機能（Generator Tab）
  * - ローディング状態管理
  * - エラーハンドリング
  * 
  * 作成日: 2026年1月13日
- * 更新日: 2026年1月14日 - Phase 1.6-1.8実装、型定義をmodels.tsに統一
- * 更新日: 2026年1月14日 - Phase 2 HTML生成機能追加（Generator Tab）
+ * 更新日: 2026年1月14日 - 日本語化対応
  */
 
 'use client';
@@ -58,138 +57,83 @@ type Tab = 'overview' | 'violations' | 'predictions' | 'suggestions' | 'generato
 export default function ProjectDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const projectId = params.id as string;
+  const projectId = params?.id as string;
 
-  // =====================================
-  // State管理
-  // =====================================
-
-  const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [project, setProject] = useState<Project | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [violations, setViolations] = useState<Violation[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   
-  // ローディング状態（タブ別）
-  const [isLoadingProject, setIsLoadingProject] = useState(true);
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [isLoading, setIsLoading] = useState(true);
   const [isLoadingTab, setIsLoadingTab] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // =====================================
-  // データ取得
-  // =====================================
-
   useEffect(() => {
-    fetchProjectData();
+    if (projectId) {
+      loadProject();
+    }
   }, [projectId]);
 
-  const fetchProjectData = async () => {
-    setIsLoadingProject(true);
-    setError(null);
-
-    try {
-      // プロジェクト基本情報取得
-      const projectRes = await apiClient.get(`/projects/${projectId}`);
-
-      if (projectRes.data.success) {
-        setProject(projectRes.data.data);
-      } else {
-        throw new Error('プロジェクトの取得に失敗しました');
-      }
-
-      // 解析結果取得
-      try {
-        const analysisRes = await apiClient.get(`/analysis/${projectId}`);
-        
-        if (analysisRes.data.success) {
-          setAnalysisResult(analysisRes.data.data);
-        }
-      } catch (analysisErr) {
-        // 解析結果が存在しない場合はエラーにしない
-        console.log('解析結果なし:', analysisErr);
-      }
-
-    } catch (err: any) {
-      console.error('データ取得エラー:', err);
-      setError(err.message || 'データの取得に失敗しました');
-    } finally {
-      setIsLoadingProject(false);
-    }
-  };
-
-  const fetchViolations = async () => {
-    if (violations.length > 0) return; // 既に取得済み
-
-    setIsLoadingTab(true);
-    try {
-      const res = await apiClient.get(`/analysis/${projectId}/violations`);
-      if (res.data.success) {
-        // Backend response: { success: true, data: { violations: [], total: 1607 } }
-        setViolations(res.data.data.violations || []);
-      }
-    } catch (err) {
-      console.error('ルール違反取得エラー:', err);
-    } finally {
-      setIsLoadingTab(false);
-    }
-  };
-
-  const fetchPredictions = async () => {
-    if (predictions.length > 0) return; // 既に取得済み
-
-    setIsLoadingTab(true);
-    try {
-      const res = await apiClient.get(`/analysis/${projectId}/predictions`);
-      if (res.data.success) {
-        // Backend response: { success: true, data: [...predictions] }
-        setPredictions(res.data.data || []);
-      }
-    } catch (err) {
-      console.error('崩壊予測取得エラー:', err);
-    } finally {
-      setIsLoadingTab(false);
-    }
-  };
-
-  const fetchSuggestions = async () => {
-    if (suggestions.length > 0) return; // 既に取得済み
-
-    setIsLoadingTab(true);
-    try {
-      const res = await apiClient.get(`/analysis/${projectId}/suggestions`);
-      if (res.data.success) {
-        // Backend response: { success: true, data: [...suggestions] }
-        setSuggestions(res.data.data || []);
-      }
-    } catch (err) {
-      console.error('改善提案取得エラー:', err);
-    } finally {
-      setIsLoadingTab(false);
-    }
-  };
-
-  // タブ切り替え時にデータ取得
   useEffect(() => {
-    if (activeTab === 'violations' && violations.length === 0) {
-      fetchViolations();
-    } else if (activeTab === 'predictions' && predictions.length === 0) {
-      fetchPredictions();
-    } else if (activeTab === 'suggestions' && suggestions.length === 0) {
-      fetchSuggestions();
+    if (activeTab !== 'overview' && activeTab !== 'generator') {
+      loadTabData();
     }
   }, [activeTab]);
 
-  // =====================================
-  // レンダリング
-  // =====================================
+  const loadProject = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
-  if (isLoadingProject) {
+      const projectResponse = await apiClient.get(`/projects/${projectId}`);
+      setProject(projectResponse.data.data);
+
+      try {
+        const analysisResponse = await apiClient.get(`/analysis/${projectId}`);
+        setAnalysisResult(analysisResponse.data.data);
+      } catch (analysisError: any) {
+        if (analysisError.response?.status !== 404) {
+          console.error('Failed to load analysis:', analysisError);
+        }
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || 'プロジェクトの読み込みに失敗しました');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadTabData = async () => {
+    if (!projectId) return;
+
+    try {
+      setIsLoadingTab(true);
+
+      if (activeTab === 'violations') {
+        const response = await apiClient.get(`/analysis/${projectId}/violations`);
+        setViolations(response.data.data.violations || []);
+      } else if (activeTab === 'predictions') {
+        const response = await apiClient.get(`/analysis/${projectId}/predictions`);
+        setPredictions(response.data.data.predictions || []);
+      } else if (activeTab === 'suggestions') {
+        const response = await apiClient.get(`/analysis/${projectId}/suggestions`);
+        setSuggestions(response.data.data.suggestions || []);
+      }
+    } catch (err: any) {
+      console.error(`Failed to load ${activeTab}:`, err);
+    } finally {
+      setIsLoadingTab(false);
+    }
+  };
+
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin text-4xl mb-4">⏳</div>
-          <p className="text-gray-600">プロジェクトを読み込み中...</p>
+          <p className="text-gray-600">読み込み中...</p>
         </div>
       </div>
     );
@@ -199,7 +143,6 @@ export default function ProjectDetailPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <span className="text-4xl mb-4 block">❌</span>
           <p className="text-red-600 mb-4">{error || 'プロジェクトが見つかりません'}</p>
           <Button onClick={() => router.push('/dashboard')}>
             ダッシュボードに戻る
@@ -210,123 +153,119 @@ export default function ProjectDetailPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4">
+    <div className="max-w-7xl mx-auto px-4 py-8">
       {/* ヘッダー */}
       <div className="mb-8">
-        <div className="flex items-center mb-4">
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="text-gray-600 hover:text-gray-900 mr-4 transition-colors"
-          >
-            ← 戻る
-          </button>
-          <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
-        </div>
+        <button
+          onClick={() => router.push('/dashboard')}
+          className="text-sm text-gray-600 hover:text-gray-900 mb-4 flex items-center gap-1"
+        >
+          ← 戻る
+        </button>
+        
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">{project.name}</h1>
+            {project.description && (
+              <p className="text-gray-600">{project.description}</p>
+            )}
+            <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+              <span>🔗 Figmaで開く</span>
+              <span>📊 最終解析: {analysisResult ? new Date(analysisResult.analyzedAt).toLocaleDateString('ja-JP') : '未解析'}</span>
+              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                project.analysisStatus === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                project.analysisStatus === 'ANALYZING' ? 'bg-blue-100 text-blue-800' :
+                project.analysisStatus === 'FAILED' ? 'bg-red-100 text-red-800' :
+                'bg-gray-100 text-gray-800'
+              }`}>
+                {project.analysisStatus === 'COMPLETED' ? '完了' :
+                 project.analysisStatus === 'ANALYZING' ? '解析中' :
+                 project.analysisStatus === 'FAILED' ? '失敗' : '未解析'}
+              </span>
+            </div>
+          </div>
 
-        <div className="flex items-center flex-wrap gap-4 text-sm text-gray-600">
-          {project.figmaFileUrl && (
-            <a
-              href={project.figmaFileUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:underline"
-            >
-              🔗 Figmaで開く
-            </a>
-          )}
-          <span>
-            最終解析: {project.lastAnalyzedAt ? new Date(project.lastAnalyzedAt).toLocaleString('ja-JP') : '未解析'}
-          </span>
-          <span
-            className={`px-2 py-1 rounded text-xs font-medium ${
-              project.analysisStatus === 'COMPLETED'
-                ? 'bg-green-100 text-green-800'
-                : project.analysisStatus === 'ANALYZING'
-                ? 'bg-blue-100 text-blue-800'
-                : 'bg-gray-100 text-gray-800'
-            }`}
-          >
-            {project.analysisStatus}
-          </span>
+          <Button variant="primary">
+            再解析
+          </Button>
         </div>
       </div>
 
-      {/* スコア表示 */}
-      {analysisResult && (
-        <div className="bg-white border rounded-lg p-6 mb-8 shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-            {/* FIGLEAN適合度 */}
+      {/* FIGLEAN適合度スコア */}
+      {project.figleanScore !== null && (
+        <div className="bg-white rounded-lg border p-6 mb-8 shadow-sm">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
             <div className="text-center">
-              <div className="text-sm text-gray-600 mb-2">FIGLEAN適合度</div>
-              <div
-                className={`text-5xl font-bold mb-2 ${
-                  analysisResult.figleanScore >= 90
-                    ? 'text-green-600'
-                    : analysisResult.figleanScore >= 70
-                    ? 'text-yellow-600'
-                    : 'text-red-600'
-                }`}
-              >
-                {analysisResult.figleanScore}
+              <h3 className="text-sm text-gray-600 mb-2">FIGLEAN適合度</h3>
+              <div className={`text-4xl font-bold ${
+                project.figleanScore >= 90 ? 'text-green-600' :
+                project.figleanScore >= 70 ? 'text-yellow-600' :
+                'text-red-600'
+              }`}>
+                {project.figleanScore}
               </div>
-              <div className="text-xs text-gray-500 mt-1">
-                {analysisResult.canGenerateHTML ? '✅ HTML生成可能' : '⚠️ 改善推奨'}
+              <p className="text-xs text-gray-500 mt-1">
+                {project.figleanScore >= 90 ? '⚠️ 改善推奨' : ''}
+              </p>
+            </div>
+
+            <div className="text-center">
+              <h3 className="text-sm text-gray-600 mb-2">Layout</h3>
+              <div className="text-3xl font-bold text-gray-900">
+                {project.layoutScore || '-'}
               </div>
+              <p className="text-xs text-gray-500 mt-1">レイアウト設計</p>
             </div>
 
-            {/* Layout */}
             <div className="text-center">
-              <div className="text-sm text-gray-600 mb-2">Layout</div>
-              <div className="text-3xl font-bold text-gray-900">{analysisResult.layoutScore}</div>
-              <div className="text-xs text-gray-500 mt-1">レイアウト設計</div>
+              <h3 className="text-sm text-gray-600 mb-2">Component</h3>
+              <div className="text-3xl font-bold text-gray-900">
+                {project.componentScore || '-'}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">コンポーネント化</p>
             </div>
 
-            {/* Component */}
             <div className="text-center">
-              <div className="text-sm text-gray-600 mb-2">Component</div>
-              <div className="text-3xl font-bold text-gray-900">{analysisResult.componentScore}</div>
-              <div className="text-xs text-gray-500 mt-1">コンポーネント化</div>
+              <h3 className="text-sm text-gray-600 mb-2">Responsive</h3>
+              <div className="text-3xl font-bold text-gray-900">
+                {project.responsiveScore || '-'}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">レスポンシブ対応</p>
             </div>
 
-            {/* Responsive */}
             <div className="text-center">
-              <div className="text-sm text-gray-600 mb-2">Responsive</div>
-              <div className="text-3xl font-bold text-gray-900">{analysisResult.responsiveScore}</div>
-              <div className="text-xs text-gray-500 mt-1">レスポンシブ対応</div>
-            </div>
-
-            {/* Semantic */}
-            <div className="text-center">
-              <div className="text-sm text-gray-600 mb-2">Semantic</div>
-              <div className="text-3xl font-bold text-gray-900">{analysisResult.semanticScore}</div>
-              <div className="text-xs text-gray-500 mt-1">セマンティック</div>
+              <h3 className="text-sm text-gray-600 mb-2">Semantic</h3>
+              <div className="text-3xl font-bold text-gray-900">
+                {project.semanticScore || '-'}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">セマンティック</p>
             </div>
           </div>
         </div>
       )}
 
       {/* タブナビゲーション */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="flex space-x-8">
+      <div className="mb-6">
+        <nav className="flex gap-6 border-b overflow-x-auto">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
               activeTab === 'overview'
                 ? 'border-indigo-500 text-indigo-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            📊 Overview
+            📊 概要
           </button>
           <button
             onClick={() => setActiveTab('violations')}
-            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
               activeTab === 'violations'
                 ? 'border-indigo-500 text-indigo-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            ⚠️ Violations
+            ⚠️ 違反
             {analysisResult && (
               <span className="ml-2 px-2 py-0.5 text-xs bg-red-100 text-red-800 rounded-full">
                 {analysisResult.violations.critical + analysisResult.violations.major + analysisResult.violations.minor}
@@ -335,13 +274,13 @@ export default function ProjectDetailPage() {
           </button>
           <button
             onClick={() => setActiveTab('predictions')}
-            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
               activeTab === 'predictions'
                 ? 'border-indigo-500 text-indigo-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            🔮 Predictions
+            🔮 崩壊予測
             {predictions.length > 0 && (
               <span className="ml-2 px-2 py-0.5 text-xs bg-purple-100 text-purple-800 rounded-full">
                 {predictions.length}
@@ -350,13 +289,13 @@ export default function ProjectDetailPage() {
           </button>
           <button
             onClick={() => setActiveTab('suggestions')}
-            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
               activeTab === 'suggestions'
                 ? 'border-indigo-500 text-indigo-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            💡 Suggestions
+            💡 改善提案
             {suggestions.length > 0 && (
               <span className="ml-2 px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded-full">
                 {suggestions.length}
@@ -365,13 +304,13 @@ export default function ProjectDetailPage() {
           </button>
           <button
             onClick={() => setActiveTab('generator')}
-            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
               activeTab === 'generator'
                 ? 'border-indigo-500 text-indigo-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            🎨 Generator
+            🎨 生成
           </button>
         </nav>
       </div>
@@ -445,11 +384,11 @@ export default function ProjectDetailPage() {
                         💡 次のステップ
                       </h3>
                       <ul className="space-y-2 text-sm text-indigo-800">
-                        <li>• Violationsタブで詳細なルール違反を確認</li>
-                        <li>• Predictionsタブで崩れリスクを把握</li>
-                        <li>• Suggestionsタブで改善提案を確認</li>
+                        <li>• 違反タブで詳細なルール違反を確認</li>
+                        <li>• 崩壊予測タブで崩れリスクを把握</li>
+                        <li>• 改善提案タブで改善提案を確認</li>
                         {analysisResult.canGenerateHTML && (
-                          <li>• Generatorタブで実際のHTMLコードを生成</li>
+                          <li>• 生成タブで実際のHTMLコードを生成</li>
                         )}
                       </ul>
                     </div>

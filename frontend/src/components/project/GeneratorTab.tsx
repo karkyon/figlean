@@ -1,5 +1,5 @@
 /**
- * FIGLEAN Frontend - GeneratorTabコンポーネント（Grid機能統合版）
+ * FIGLEAN Frontend - GeneratorTabコンポーネント（日本語化版）
  * ファイルパス: frontend/src/components/project/GeneratorTab.tsx
  * 
  * 機能:
@@ -7,10 +7,10 @@
  * 2. 生成オプション設定
  * 3. 生成結果のプレビューとダウンロード
  * 4. 生成履歴管理
- * 5. Grid判定・プレビュー（Phase 2.5追加）
+ * 5. Grid判定・プレビュー
  * 
  * 作成日: 2026年1月14日
- * 更新日: 2026年1月14日 - Phase 2.5 Grid変換機能統合
+ * 更新日: 2026年1月14日 - 日本語化対応
  */
 
 'use client';
@@ -106,7 +106,7 @@ export default function GeneratorTab({ project }: GeneratorTabProps) {
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            🎨 Generate
+            🎨 生成
           </button>
           <button
             onClick={() => setActiveSubTab('history')}
@@ -116,7 +116,7 @@ export default function GeneratorTab({ project }: GeneratorTabProps) {
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            📋 History
+            📋 履歴
           </button>
         </nav>
       </div>
@@ -281,7 +281,7 @@ export default function GeneratorTab({ project }: GeneratorTabProps) {
                 disabled={!canGenerate || generating}
                 className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
               >
-                {generating ? '生成中...' : 'Generate HTML'}
+                {generating ? '生成中...' : 'HTML生成'}
               </button>
 
               {error && (
@@ -354,7 +354,7 @@ export default function GeneratorTab({ project }: GeneratorTabProps) {
               {!result && !error && (
                 <div className="bg-gray-50 rounded-lg border-2 border-dashed p-12 text-center text-gray-500">
                   <div className="text-4xl mb-4">🎨</div>
-                  <p>Generate HTMLをクリックして<br />コード生成を開始</p>
+                  <p>HTML生成をクリックして<br />コード生成を開始</p>
                 </div>
               )}
             </div>
