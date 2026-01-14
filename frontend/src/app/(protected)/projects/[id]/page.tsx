@@ -1,17 +1,19 @@
 /**
- * FIGLEAN Frontend - プロジェクト詳細ページ（Phase 1.6-1.8完全版・型修正版）
+ * FIGLEAN Frontend - プロジェクト詳細ページ（Phase 1.6-1.8完全版・Phase 2 Generator追加）
  * ファイルパス: frontend/src/app/(protected)/projects/[id]/page.tsx
  * 
  * 機能:
  * - プロジェクト基本情報表示
  * - FIGLEAN適合度スコア表示
- * - タブナビゲーション（Overview / Violations / Predictions / Suggestions）
+ * - タブナビゲーション（Overview / Violations / Predictions / Suggestions / Generator）
  * - 診断結果カード表示
+ * - HTML生成機能（Generator Tab）
  * - ローディング状態管理
  * - エラーハンドリング
  * 
  * 作成日: 2026年1月13日
  * 更新日: 2026年1月14日 - Phase 1.6-1.8実装、型定義をmodels.tsに統一
+ * 更新日: 2026年1月14日 - Phase 2 HTML生成機能追加（Generator Tab）
  */
 
 'use client';
@@ -22,6 +24,7 @@ import { Button } from '@/components/ui/Button';
 import { ViolationCard } from '@/components/analysis/ViolationCard';
 import { PredictionCard } from '@/components/analysis/PredictionCard';
 import { SuggestionCard } from '@/components/analysis/SuggestionCard';
+import GeneratorTab from '@/components/project/GeneratorTab';
 import { Project, Violation, Prediction, Suggestion } from '@/types/models';
 import apiClient from '@/lib/api/client';
 
@@ -46,7 +49,7 @@ interface AnalysisResult {
   analyzedAt: string;
 }
 
-type Tab = 'overview' | 'violations' | 'predictions' | 'suggestions';
+type Tab = 'overview' | 'violations' | 'predictions' | 'suggestions' | 'generator';
 
 // =====================================
 // メインコンポーネント
@@ -360,6 +363,16 @@ export default function ProjectDetailPage() {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('generator')}
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'generator'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            🎨 Generator
+          </button>
         </nav>
       </div>
 
@@ -436,7 +449,7 @@ export default function ProjectDetailPage() {
                         <li>• Predictionsタブで崩れリスクを把握</li>
                         <li>• Suggestionsタブで改善提案を確認</li>
                         {analysisResult.canGenerateHTML && (
-                          <li>• HTML Generatorで実際のコードを生成（Phase 3実装予定）</li>
+                          <li>• Generatorタブで実際のHTMLコードを生成</li>
                         )}
                       </ul>
                     </div>
@@ -530,6 +543,9 @@ export default function ProjectDetailPage() {
                 )}
               </div>
             )}
+
+            {/* Generator タブ */}
+            {activeTab === 'generator' && <GeneratorTab project={project} />}
           </>
         )}
       </div>

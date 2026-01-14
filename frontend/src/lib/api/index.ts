@@ -11,6 +11,9 @@ export * from './projects';
 // FigmaAPI
 export * from './figma';
 
+// HTML変換API
+export * from './html';
+
 // 診断API
 export * from './analysis';
 

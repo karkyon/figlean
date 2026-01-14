@@ -22,6 +22,16 @@ export type AlignItems = 'START' | 'CENTER' | 'END' | 'BASELINE' | 'STRETCH';
 export type JustifyContent = 'START' | 'CENTER' | 'END' | 'SPACE_BETWEEN' | 'SPACE_AROUND' | 'SPACE_EVENLY';
 
 /**
+ * HTML生成フレームワーク
+ */
+export type Framework = 'HTML_TAILWIND' | 'REACT_JSX' | 'VUE_SFC';
+
+/**
+ * 生成ステータス
+ */
+export type GenerationStatus = 'NOT_GENERATED' | 'GENERATING' | 'COMPLETED' | 'FAILED';
+
+/**
  * レイアウト情報
  */
 export interface LayoutInfo {
