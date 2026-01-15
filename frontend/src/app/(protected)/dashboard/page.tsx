@@ -54,6 +54,7 @@ export default function DashboardPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [scoreMin, setScoreMin] = useState<number | null>(null);
   const [scoreMax, setScoreMax] = useState<number | null>(null);
+  const [isFilterExpanded, setIsFilterExpanded] = useState(true);
 
   // =====================================
   // データ取得
@@ -234,7 +235,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="h-16 bg-gradient-to-r from-gray-900 to-gray-800 text-white flex items-center justify-between px-6 shadow-lg">
+      <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-gradient-to-r from-gray-900 to-gray-800 text-white flex items-center justify-between px-6 shadow-lg">
         <div className="text-2xl font-extrabold">FIGLEAN</div>
         <div className="flex items-center gap-4">
           {user?.hasFigmaToken ? (
@@ -255,7 +256,7 @@ export default function DashboardPage() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-8 py-8">
+      <main className="max-w-7xl mx-auto px-8 py-8 mt-16">
         {/* Dashboard Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-extrabold text-gray-900 mb-2">
@@ -317,116 +318,144 @@ export default function DashboardPage() {
           </div>
 
           {/* フィルター・ソート・検索UI */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-6">
-            {/* 検索バー */}
-            <div className="mb-4">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                🔍 検索
-              </label>
-              <input
-                type="text"
-                placeholder="プロジェクト名またはFigmaファイル名で検索..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* フィルター行 */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-              {/* ステータスフィルター */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  ステータス
-                </label>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="ALL">すべて</option>
-                  <option value="PENDING">待機中</option>
-                  <option value="IMPORTING">インポート中</option>
-                  <option value="ANALYZING">解析中</option>
-                  <option value="COMPLETED">完了</option>
-                  <option value="FAILED">失敗</option>
-                </select>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
+            {/* フィルターヘッダー */}
+            <button
+              onClick={() => setIsFilterExpanded(!isFilterExpanded)}
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-semibold text-gray-900">🔍 検索・フィルター</span>
+                {!isFilterExpanded && filteredProjects.length !== projects.length && (
+                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">
+                    フィルター適用中
+                  </span>
+                )}
               </div>
+              <svg
+                className={`w-5 h-5 text-gray-600 transition-transform ${isFilterExpanded ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
 
-              {/* スコア範囲フィルター */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  スコア (最小)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  placeholder="0"
-                  value={scoreMin ?? ''}
-                  onChange={(e) => setScoreMin(e.target.value ? Number(e.target.value) : null)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+            {/* フィルターコンテンツ */}
+            {isFilterExpanded && (
+              <div className="px-6 pb-6 pt-2">
+                {/* 検索バー */}
+                <div className="mb-4">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    検索
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="プロジェクト名またはFigmaファイル名で検索..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  スコア (最大)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  placeholder="100"
-                  value={scoreMax ?? ''}
-                  onChange={(e) => setScoreMax(e.target.value ? Number(e.target.value) : null)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+                {/* フィルター行 */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                  {/* ステータスフィルター */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      ステータス
+                    </label>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="ALL">すべて</option>
+                      <option value="PENDING">待機中</option>
+                      <option value="IMPORTING">インポート中</option>
+                      <option value="ANALYZING">解析中</option>
+                      <option value="COMPLETED">完了</option>
+                      <option value="FAILED">失敗</option>
+                    </select>
+                  </div>
 
-              {/* クリアボタン */}
-              <div className="flex items-end">
-                <button
-                  onClick={handleClearFilters}
-                  className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-semibold"
-                >
-                  フィルターをクリア
-                </button>
-              </div>
-            </div>
+                  {/* スコア範囲フィルター */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      スコア (最小)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      placeholder="0"
+                      value={scoreMin ?? ''}
+                      onChange={(e) => setScoreMin(e.target.value ? Number(e.target.value) : null)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
 
-            {/* ソート行 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  並び替え
-                </label>
-                <select
-                  value={sortField}
-                  onChange={(e) => setSortField(e.target.value as SortField)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="createdAt">作成日時</option>
-                  <option value="updatedAt">更新日時</option>
-                  <option value="name">プロジェクト名</option>
-                  <option value="figleanScore">FIGLEANスコア</option>
-                </select>
-              </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      スコア (最大)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      placeholder="100"
+                      value={scoreMax ?? ''}
+                      onChange={(e) => setScoreMax(e.target.value ? Number(e.target.value) : null)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  順序
-                </label>
-                <select
-                  value={sortOrder}
-                  onChange={(e) => setSortOrder(e.target.value as SortOrder)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="desc">降順</option>
-                  <option value="asc">昇順</option>
-                </select>
+                  {/* クリアボタン */}
+                  <div className="flex items-end">
+                    <button
+                      onClick={handleClearFilters}
+                      className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-semibold"
+                    >
+                      フィルターをクリア
+                    </button>
+                  </div>
+                </div>
+
+                {/* ソート行 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      並び替え
+                    </label>
+                    <select
+                      value={sortField}
+                      onChange={(e) => setSortField(e.target.value as SortField)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="createdAt">作成日時</option>
+                      <option value="updatedAt">更新日時</option>
+                      <option value="name">プロジェクト名</option>
+                      <option value="figleanScore">FIGLEANスコア</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      順序
+                    </label>
+                    <select
+                      value={sortOrder}
+                      onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="desc">降順</option>
+                      <option value="asc">昇順</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* エラー表示 */}
