@@ -1,9 +1,18 @@
 // =====================================
-// backend/src/services/figmaCommentService.ts
-// Figmaコメント投稿サービス - FIGLEAN Phase 7
-// 作成日時: 2026年1月12日
-// 依存関係: figmaTokenService, lib/prisma, config/env, errors
-// 説明: Figma Comment APIとの連携、ルール違反へのコメント自動投稿
+// ファイルパス: backend/src/services/figmaCommentService.ts
+// 概要: Figmaコメント投稿サービス - レート制限対策版（最小限の変更）
+// 機能説明:
+//   - Figmaへのコメント投稿（単一/一括）
+//   - レート制限エラー時の自動リトライ（新規追加）
+//   - 投稿間隔の最適化（500ms → 1000ms）
+// 作成日: 2026-01-12
+// 更新日: 2026-01-16 - レート制限対策強化、投稿間隔延長
+// 依存関係:
+//   - @prisma/client
+//   - ../services/figmaTokenService
+//   - ../config/env
+//   - ../errors
+//   - ../utils/logger
 // =====================================
 
 import { PrismaClient, RuleViolation, Severity } from '@prisma/client';
@@ -28,7 +37,7 @@ const prisma = new PrismaClient();
 export interface FigmaCommentRequest {
   message: string;
   client_meta: {
-    node_id: string;  // ✅ 文字列
+    node_id: string;
     node_offset: {
       x: number;
       y: number;
@@ -85,9 +94,9 @@ export interface BulkCommentPostResult {
  * コメントメッセージ生成オプション
  */
 export interface CommentMessageOptions {
-  includeFixSteps?: boolean;  // 修正手順を含めるか
-  includeDetectedValue?: boolean;  // 検出値を含めるか
-  language?: 'ja' | 'en';  // 言語
+  includeFixSteps?: boolean;
+  includeDetectedValue?: boolean;
+  language?: 'ja' | 'en';
 }
 
 // =====================================
@@ -127,7 +136,7 @@ export function generateCommentMessage(
   const {
     includeFixSteps = true,
     includeDetectedValue = true,
-    language: _language = 'ja'  //
+    language: _language = 'ja'
   } = options;
 
   const severityIcon = SEVERITY_ICONS[violation.severity];
@@ -135,18 +144,14 @@ export function generateCommentMessage(
 
   // ヘッダー部分
   let message = `${severityIcon} **${violation.severity}** ${categoryIcon} ${violation.ruleCategory}\n\n`;
-  
   // ルール名
   message += `**${violation.ruleName}**\n\n`;
-  
   // 説明
   message += `${violation.description}\n\n`;
-  
   // 影響
   if (violation.impact) {
     message += `**影響:**\n${violation.impact}\n\n`;
   }
-  
   // 検出値
   if (includeDetectedValue && violation.detectedValue) {
     message += `**検出値:**\n${violation.detectedValue}\n\n`;
@@ -238,76 +243,137 @@ async function handleFigmaCommentApiError(
   );
 }
 
+// =====================================
+// 🆕 リトライ機能付きコメント投稿
+// =====================================
+
 /**
- * Figmaにコメントを投稿
+ * Figmaにコメントを投稿（リトライ機能付き）
  * 
  * @param userId - FIGLEANユーザーID
  * @param fileKey - FigmaファイルKey
  * @param nodeId - ノードID
  * @param message - コメントメッセージ
+ * @param maxRetries - 最大リトライ回数（デフォルト3回）
  * @returns コメントID
- * @throws NotFoundError - トークンが見つからない
- * @throws ExternalServiceError - Figma APIエラー
  */
+async function postCommentToFigmaWithRetry(
+  userId: string,
+  fileKey: string,
+  nodeId: string,
+  message: string,
+  maxRetries: number = 3
+): Promise<string> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        logger.info('Figmaコメント投稿リトライ', { 
+          userId, 
+          fileKey, 
+          nodeId, 
+          attempt: attempt + 1,
+          maxRetries: maxRetries + 1
+        });
+      } else {
+        logger.info('Figmaコメント投稿開始', { userId, fileKey, nodeId });
+      }
+
+      // トークン取得
+      const token = await figmaTokenService.getFigmaToken(userId);
+      
+      if (!token) {
+        throw new NotFoundError('Figmaトークンが登録されていません');
+      }
+
+      // リクエストボディ作成
+      const requestBody: FigmaCommentRequest = {
+        message,
+        client_meta: {
+          node_id: nodeId,
+          node_offset: { x: 0, y: 0 }
+        }
+      };
+
+      // Figma APIリクエスト
+      const response = await fetch(
+        `${config.figmaApiBaseUrl}/files/${fileKey}/comments`,
+        {
+          method: 'POST',
+          headers: createFigmaCommentHeaders(token),
+          body: JSON.stringify(requestBody)
+        }
+      );
+
+      if (!response.ok) {
+        // 429エラー（レート制限）の場合はリトライ
+        if (response.status === 429 && attempt < maxRetries) {
+          const waitTime = Math.pow(2, attempt) * 2000; // 2s, 4s, 8s
+          logger.warn(`Figma APIレート制限エラー - ${waitTime}ms後にリトライ`, {
+            userId,
+            fileKey,
+            nodeId,
+            attempt: attempt + 1,
+            waitTime
+          });
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          continue; // リトライ
+        }
+        
+        // その他のエラーまたは最終試行の場合はthrow
+        await handleFigmaCommentApiError(response, 'コメント投稿');
+      }
+
+      const data = await response.json() as FigmaCommentResponse;
+
+      logger.info('Figmaコメント投稿成功', { 
+        userId, 
+        fileKey,
+        nodeId,
+        commentId: data.id,
+        retryCount: attempt
+      });
+
+      return data.id;
+
+    } catch (error) {
+      lastError = error as Error;
+      
+      // NotFoundError, ValidationErrorは即座にthrow（リトライ不要）
+      if (error instanceof NotFoundError || error instanceof ValidationError) {
+        throw error;
+      }
+      
+      // 最終試行でもエラーの場合
+      if (attempt === maxRetries) {
+        break;
+      }
+    }
+  }
+
+  // すべてのリトライが失敗
+  logger.error('Figmaコメント投稿エラー（全リトライ失敗）', { 
+    userId, 
+    fileKey, 
+    nodeId, 
+    error: lastError 
+  });
+  throw lastError || new ExternalServiceError('Figmaコメント投稿に失敗しました');
+}
+
+// =====================================
+// 既存のpostCommentToFigma（互換性のため維持）
+// =====================================
+
 export async function postCommentToFigma(
   userId: string,
   fileKey: string,
   nodeId: string,
   message: string
 ): Promise<string> {
-  logger.info('Figmaコメント投稿開始', { userId, fileKey, nodeId });
-
-  // トークンを取得
-  const token = await figmaTokenService.getFigmaToken(userId);
-  
-  if (!token) {
-    throw new NotFoundError('Figmaトークンが登録されていません');
-  }
-
-  // リクエストボディ作成
-  const requestBody: FigmaCommentRequest = {
-    message,
-    client_meta: {
-      node_id: nodeId,
-      node_offset: {
-        x: 0,
-        y: 0
-      }
-    }
-  };
-
-  try {
-    const response = await fetch(
-      `${config.figmaApiBaseUrl}/files/${fileKey}/comments`,
-      {
-        method: 'POST',
-        headers: createFigmaCommentHeaders(token),
-        body: JSON.stringify(requestBody)
-      }
-    );
-
-    if (!response.ok) {
-      await handleFigmaCommentApiError(response, 'コメント投稿');
-    }
-
-    const data = await response.json() as FigmaCommentResponse;
-
-    logger.info('Figmaコメント投稿成功', { 
-      userId, 
-      fileKey,
-      nodeId,
-      commentId: data.id
-    });
-
-    return data.id;
-  } catch (error) {
-    if (error instanceof ExternalServiceError || error instanceof NotFoundError) {
-      throw error;
-    }
-    
-    logger.error('Figmaコメント投稿エラー', { userId, fileKey, nodeId, error });
-    throw new ExternalServiceError('Figmaコメント投稿に失敗しました');
-  }
+  // 内部的にはリトライ機能付きを呼び出す
+  return postCommentToFigmaWithRetry(userId, fileKey, nodeId, message, 3);
 }
 
 /**
@@ -326,7 +392,6 @@ export async function deleteCommentFromFigma(
 ): Promise<void> {
   logger.info('Figmaコメント削除開始', { userId, fileKey, commentId });
 
-  // トークンを取得
   const token = await figmaTokenService.getFigmaToken(userId);
   
   if (!token) {
@@ -362,7 +427,7 @@ export async function deleteCommentFromFigma(
 }
 
 // =====================================
-// ルール違反へのコメント投稿
+// 単一ルール違反へのコメント投稿
 // =====================================
 
 /**
@@ -458,6 +523,7 @@ export async function postCommentForViolation(
  * @param projectId - プロジェクトID
  * @param options - コメント生成オプション
  * @returns 一括投稿結果
+ * 一括コメント投稿（投稿間隔を500ms→1000msに変更）
  */
 export async function postCommentsForProject(
   userId: string,
@@ -538,8 +604,8 @@ export async function postCommentsForProject(
         commentId 
       });
 
-      // レート制限対策: 投稿間隔を設ける（500ms）
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // 🔧 レート制限対策: 投稿間隔を1秒に延長（500ms → 1000ms）
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
     } catch (error) {
       logger.error('コメント投稿失敗', { 
@@ -581,6 +647,7 @@ export async function postCommentsForProject(
  * @param minSeverity - 最小重要度（CRITICAL, MAJOR, MINOR）
  * @param options - コメント生成オプション
  * @returns 一括投稿結果
+ * 重要度別一括投稿（投稿間隔を500ms→1000msに変更）
  */
 export async function postCommentsBySeverity(
   userId: string,
@@ -667,8 +734,8 @@ export async function postCommentsBySeverity(
 
       successCount++;
 
-      // レート制限対策
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // 🔧 レート制限対策: 投稿間隔を1秒に延長（500ms → 1000ms）
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
     } catch (error) {
       logger.error('コメント投稿失敗', { 
