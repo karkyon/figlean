@@ -37,6 +37,15 @@ export default function DashboardPage() {
   
   // モーダル
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    projectId: string | null;
+    projectName: string;
+  }>({
+    isOpen: false,
+    projectId: null,
+    projectName: '',
+  });
   
   // フィルター・ソート・検索
   const [searchQuery, setSearchQuery] = useState('');
@@ -157,6 +166,32 @@ export default function DashboardPage() {
     setScoreMax(null);
     setSortField('createdAt');
     setSortOrder('desc');
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, projectId: string, projectName: string) => {
+    e.stopPropagation();
+    setDeleteModal({
+      isOpen: true,
+      projectId,
+      projectName,
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteModal.projectId) return;
+
+    try {
+      await projectsApi.deleteProject(deleteModal.projectId);
+      setDeleteModal({ isOpen: false, projectId: null, projectName: '' });
+      fetchProjects();
+    } catch (error: any) {
+      console.error('プロジェクト削除エラー:', error);
+      alert('プロジェクトの削除に失敗しました');
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteModal({ isOpen: false, projectId: null, projectName: '' });
   };
 
   // =====================================
@@ -448,8 +483,7 @@ export default function DashboardPage() {
                     <button
                       key={project.id}
                       onClick={() => router.push(`/projects/${project.id}`)}
-                      className="bg-white rounded-xl p-5 shadow-sm border border-gray-200 hover:shadow-lg transition-all duration-200 hover:-translate-y-1 text-left"
-                    >
+                    　className="bg-white rounded-xl p-5 shadow-sm border border-gray-200 hover:shadow-lg transition-all duration-200 hover:-translate-y-1 text-left relative"                    >
                       <div className="flex justify-between items-start mb-3">
                         <h3 className="text-base font-bold text-gray-900 flex-1 pr-2">
                           {project.name}
@@ -489,9 +523,30 @@ export default function DashboardPage() {
                         )}
                       </div>
 
-                      {/* 日時表示 */}
-                      <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-                        更新: {new Date(project.updatedAt).toLocaleDateString('ja-JP')}
+                      {/* 日時表示と削除ボタン */}
+                      <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+                        <div className="text-xs text-gray-500">
+                          更新: {new Date(project.updatedAt).toLocaleDateString('ja-JP')}
+                        </div>
+                        {/* 削除ボタン */}
+                        <button
+                          onClick={(e) => handleDeleteClick(e, project.id, project.name)}
+                          className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                          title="プロジェクトを削除"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-4 w-4"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </button>
                       </div>
                     </button>
                   ))}
@@ -508,6 +563,35 @@ export default function DashboardPage() {
         onClose={() => setIsCreateModalOpen(false)}
         onSuccess={handleProjectCreated}
       />
+
+      {/* Delete Confirm Modal */}
+      {deleteModal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">プロジェクトを削除</h3>
+            <p className="text-gray-600 mb-2">
+              <span className="font-semibold text-gray-900">{deleteModal.projectName}</span> を削除してもよろしいですか?
+            </p>
+            <p className="text-red-600 text-sm mb-6">
+              この操作は取り消せません。すべての診断データも削除されます。
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleDeleteCancel}
+                className="px-5 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                className="px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-semibold"
+              >
+                削除する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
