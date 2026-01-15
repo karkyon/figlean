@@ -50,14 +50,6 @@ interface AnalysisResult {
 
 type TabType = 'overview' | 'violations' | 'predictions' | 'suggestions' | 'generate';
 
-interface ViolationsResponse {
-  violations: RuleViolation[];
-  total: number;
-  limit: number;
-  offset: number;
-  hasMore: boolean;
-}
-
 // =====================================
 // プロジェクト詳細ページ
 // =====================================
@@ -422,7 +414,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                 key={tab.id}
                 onClick={() => {
                   setActiveTab(tab.id as TabType);
-                  logger.component('ProjectDetailPage - Tab Changed: ' + tab.id, { tab: tab.id });
+                  logger.component('ProjectDetailPage', `Tab Changed: ${tab.id}`, { tab: tab.id });
                 }}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
                   activeTab === tab.id
@@ -786,26 +778,26 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                       <div>
                         <div className="flex items-center gap-3 mb-2">
                           <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            prediction.riskLevel === 'HIGH' ? 'bg-red-100 text-red-800' :
-                            prediction.riskLevel === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-green-100 text-green-800'
+                            prediction.severity === 'CRITICAL' ? 'bg-red-100 text-red-800' :
+                            prediction.severity === 'MAJOR' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-blue-100 text-blue-800'
                           }`}>
-                            {prediction.riskLevel === 'HIGH' ? '🔴 高リスク' :
-                             prediction.riskLevel === 'MEDIUM' ? '🟡 中リスク' : '🟢 低リスク'}
+                            {prediction.severity === 'CRITICAL' ? '🔴 高リスク' :
+                            prediction.severity === 'MAJOR' ? '🟡 中リスク' : '🔵 低リスク'}
                           </span>
                         </div>
                         <h3 className="text-lg font-semibold text-gray-900">
-                          {prediction.frameName}
+                          {prediction.affectedFrame}
                         </h3>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-700 mb-2">{prediction.riskDescription}</p>
-                    {prediction.recommendation && (
-                      <div className="bg-yellow-50 rounded-lg p-4">
-                        <p className="text-sm font-medium text-yellow-900 mb-1">💡 推奨対策</p>
-                        <p className="text-sm text-yellow-800">{prediction.recommendation}</p>
-                      </div>
-                    )}
+                      <p className="text-sm text-gray-700 mb-2">{prediction.breakDescription}</p>
+                      {prediction.fixSuggestion && (
+                        <div className="bg-yellow-50 rounded-lg p-4">
+                          <p className="text-sm font-medium text-yellow-900 mb-1">💡 推奨対策</p>
+                          <p className="text-sm text-yellow-800">{prediction.fixSuggestion}</p>
+                        </div>
+                      )}
                   </div>
                 ))}
               </div>
@@ -851,7 +843,7 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
                       <div className="bg-blue-50 rounded-lg p-4">
                         <p className="text-sm font-medium text-blue-900 mb-2">🛠️ 実施手順</p>
                         <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-                          {JSON.parse(suggestion.actionSteps).map((step: string, i: number) => (
+                          {(suggestion.actionSteps as any[] || []).map((step: string, i: number) => (
                             <li key={i}>{step}</li>
                           ))}
                         </ol>
