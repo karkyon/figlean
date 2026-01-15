@@ -68,7 +68,7 @@ export const getFigmaFiles = async (): Promise<FigmaFilesResponse> => {
  *
  * @param fileKey Figmaファイルキー
  */
-export const getFigmaFileDetail = async (
+export const getFigmaFileDetails = async (
   fileKey: string
 ): Promise<FigmaFileDetail> => {
   const response = await apiClient.get<ApiResponse<FigmaFileDetail>>(

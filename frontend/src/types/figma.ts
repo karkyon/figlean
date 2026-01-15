@@ -1,7 +1,12 @@
 /**
  * FIGLEAN Frontend - Figma API専用型定義（修正版）
+ * ファイルパス: frontend/src/types/figma.ts
  * Figma REST API v1のレスポンス形式に完全一致
- * 更新日時: 2026年1月14日 - models.tsとの重複を完全削除
+ * 
+ * 作成日: 2026年1月12日
+ * 更新日時: 2026年1月15日
+ * 更新理由: FigmaImportRequestにprojectIdフィールド追加 - Backend API仕様に合わせる
+ * 依存関係: なし
  */
 
 // =====================================
@@ -127,6 +132,7 @@ export interface FigmaPage {
  * Figmaインポートリクエスト（Backend API用）
  */
 export interface FigmaImportRequest {
+  projectId: string;  // プロジェクトID（必須）
   projectName: string;
   description?: string;
   figmaFileKey: string;

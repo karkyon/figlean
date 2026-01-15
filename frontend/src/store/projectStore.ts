@@ -3,6 +3,11 @@
  * ファイルパス: frontend/src/store/projectStore.ts
  * 
  * Zustandを使用したプロジェクト関連の状態管理
+ * 
+ * 作成日: 2026年1月12日
+ * 更新日: 2026年1月15日
+ * 更新理由: createProject関数のバグ修正 - projectId取得後にインポート実行
+ * 依存関係: zustand, @/types/models, @/lib/api/projects, @/lib/api/figma, @/types/figma
  */
 
 import { create } from 'zustand';
@@ -102,14 +107,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   // プロジェクト作成 + Figmaインポート
+  // 修正: projectIdを取得してからインポート実行
   createProject: async (data) => {
     set({ isLoading: true, error: null });
     try {
       // 1. プロジェクト作成
       const project = await projectApi.createProject(data);
 
-      // 2. Figmaインポート開始
+      // 2. Figmaインポート開始（projectIdを渡す）
       const importRequest: FigmaImportRequest = {
+        projectId: project.id,  // ← 修正: projectIdを追加
         projectName: data.name,
         description: data.description,
         figmaFileKey: data.figmaFileKey,
