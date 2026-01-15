@@ -118,7 +118,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         projectId: project.id,
         figmaFileKey: data.figmaFileKey,
         figmaFileUrl: data.figmaFileUrl,
-        analyzeAll: true,
+        analyzeAll: true
       };
       const importResponse = await figmaApi.importFigmaFile(importRequest);
 

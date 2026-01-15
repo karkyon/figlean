@@ -8,11 +8,12 @@
  * - タブナビゲーション（概要 / 違反 / 崩壊予測 / 改善提案 / 生成）
  * - 診断結果カード表示
  * - HTML生成機能（Generator Tab）
+ * - Figmaコメント一括投稿機能
  * - ローディング状態管理
  * - エラーハンドリング
  * 
  * 作成日: 2026年1月13日
- * 更新日: 2026年1月14日 - 日本語化対応
+ * 更新日: 2026年1月15日 - Figmaコメント一括投稿機能追加
  */
 
 'use client';
@@ -70,6 +71,9 @@ export default function ProjectDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingTab, setIsLoadingTab] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Figmaコメント一括投稿状態
+  const [isBulkPosting, setIsBulkPosting] = useState(false);
 
   useEffect(() => {
     if (projectId) {
@@ -150,6 +154,39 @@ export default function ProjectDetailPage() {
       console.error(`Failed to load ${activeTab}:`, err);
     } finally {
       setIsLoadingTab(false);
+    }
+  };
+
+  // Figmaコメント一括投稿
+  const handleBulkPostComments = async () => {
+    if (!projectId || !violations.length) return;
+
+    const confirmed = confirm(
+      `全 ${violations.length} 件のルール違反をFigmaにコメント投稿しますか?\n\n※投稿済みの違反は除外されます`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setIsBulkPosting(true);
+      logger.info('一括コメント投稿開始', { projectId, violationCount: violations.length });
+
+      await apiClient.post(`/figma/comments/${projectId}`, {
+        includeFixSteps: true,
+        includeDetectedValue: true,
+        language: 'ja'
+      });
+
+      await loadTabData();
+
+      alert('Figmaコメントの一括投稿が完了しました');
+      logger.success('一括コメント投稿完了', { projectId });
+    } catch (error: any) {
+      console.error('一括コメント投稿エラー:', error);
+      alert('一括コメント投稿に失敗しました');
+      logger.error('一括コメント投稿失敗', error, { projectId });
+    } finally {
+      setIsBulkPosting(false);
     }
   };
 
@@ -432,17 +469,42 @@ export default function ProjectDetailPage() {
               <div>
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-2xl font-bold">ルール違反一覧</h2>
-                  {violations.length > 0 && (
-                    <p className="text-sm text-gray-600">
-                      全 {violations.length} 件
-                    </p>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {violations.length > 0 && (
+                      <>
+                        <p className="text-sm text-gray-600">
+                          全 {violations.length} 件
+                        </p>
+                        <button
+                          onClick={handleBulkPostComments}
+                          disabled={isBulkPosting}
+                          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium flex items-center gap-2"
+                        >
+                          {isBulkPosting ? (
+                            <>
+                              <span className="animate-spin">⏳</span>
+                              投稿中...
+                            </>
+                          ) : (
+                            <>
+                              💬 Figmaに一括投稿
+                            </>
+                          )}
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {violations.length > 0 ? (
                   <div className="grid grid-cols-1 gap-4">
                     {violations.map((violation) => (
-                      <ViolationCard key={violation.id} violation={violation} />
+                      <ViolationCard 
+                        key={violation.id} 
+                        violation={violation}
+                        projectId={projectId}
+                        onCommentPosted={loadTabData}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -502,7 +564,7 @@ export default function ProjectDetailPage() {
                 ) : (
                   <div className="text-center py-20 text-gray-500">
                     <p className="text-lg mb-2">✅ 改善提案はありません</p>
-                    <p className="text-sm">最高レベルのデザイン品質です！</p>
+                    <p className="text-sm">最高レベルのデザイン品質です!</p>
                   </div>
                 )}
               </div>

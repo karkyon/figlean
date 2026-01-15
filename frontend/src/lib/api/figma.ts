@@ -116,10 +116,9 @@ export const importFigmaFile = async (
 ): Promise<FigmaImportResponse> => {
   // バックエンドが期待する形式に変換
   const requestBody = {
-    fileKey: data.figmaFileKey,  // バックエンドはfileKeyを期待
+    fileKey: data.figmaFileKey,
     projectId: data.projectId,
-    importType: data.analyzeAll ? 'all' : 'specific',
-    nodeIds: data.selectedPages || [],
+    analyzeAll: data.analyzeAll ?? true
   };
   
   const response = await apiClient.post<ApiResponse<FigmaImportResponse>>(
@@ -237,37 +236,17 @@ export const getFigmaPreview = async (
   return response.data;
 };
 
-// --------------------------------------------------
-
-/**
- * Figmaコメント投稿リクエスト
- *
- * - FIGLEAN解析結果の指摘
- * - チーム共有用
- */
-export interface PostFigmaCommentRequest {
-  projectId: string;
-  fileKey: string;
-  nodeId?: string;
-  message: string;
-}
-
-export interface PostFigmaCommentResponse {
-  success: boolean;
-  data: {
-    commentId: string;
-    postedAt: string;
-  };
-  message: string;
-}
-
 /**
  * Figmaファイルにコメントを投稿
+ * Backend: POST /api/figma/comments/:projectId/:violationId
  */
 export const postFigmaComment = async (
-  request: PostFigmaCommentRequest
-): Promise<PostFigmaCommentResponse> => {
-  const response = await apiClient.post('/figma/comments', request);
+  projectId: string,
+  violationId: string
+): Promise<{ success: boolean; data: { commentId: string; postedAt: string } }> => {
+  const response = await apiClient.post(
+    `/figma/comments/${projectId}/${violationId}`
+  );
   return response.data;
 };
 

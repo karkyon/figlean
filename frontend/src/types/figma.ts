@@ -132,14 +132,9 @@ export interface FigmaPage {
  * Figmaインポートリクエスト（Backend API用）
  */
 export interface FigmaImportRequest {
-  projectId: string;  // プロジェクトID（必須）
-  projectName: string;
-  description?: string;
+  projectId: string;
   figmaFileKey: string;
   figmaFileUrl?: string;
-  figmaFileName?: string;
-  figmaNodeId?: string;
-  selectedPages?: string[];
   analyzeAll?: boolean;
 }
 
