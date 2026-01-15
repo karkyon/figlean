@@ -1,13 +1,13 @@
 /**
- * FIGLEAN Frontend - プロジェクト状態管理
  * ファイルパス: frontend/src/store/projectStore.ts
- * 
- * Zustandを使用したプロジェクト関連の状態管理
- * 
- * 作成日: 2026年1月12日
- * 更新日: 2026年1月15日
- * 更新理由: createProject関数のバグ修正 - projectId取得後にインポート実行
+ * 概要: プロジェクト状態管理
+ * 機能説明: Zustandを使用したプロジェクト関連の状態管理
+ * 作成日: 2026-01-12
+ * 更新日: 2026-01-15
+ * 更新理由: createProject関数のFigmaImportRequest修正 - fileKey不足エラー対応
  * 依存関係: zustand, @/types/models, @/lib/api/projects, @/lib/api/figma, @/types/figma
+ * 
+ * FIGLEAN Frontend - プロジェクト状態管理
  */
 
 import { create } from 'zustand';
@@ -107,18 +107,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   // プロジェクト作成 + Figmaインポート
-  // 修正: projectIdを取得してからインポート実行
   createProject: async (data) => {
     set({ isLoading: true, error: null });
     try {
       // 1. プロジェクト作成
       const project = await projectApi.createProject(data);
 
-      // 2. Figmaインポート開始（projectIdを渡す）
+      // 2. Figmaインポート開始
       const importRequest: FigmaImportRequest = {
-        projectId: project.id,  // ← 修正: projectIdを追加
-        projectName: data.name,
-        description: data.description,
+        projectId: project.id,
         figmaFileKey: data.figmaFileKey,
         figmaFileUrl: data.figmaFileUrl,
         analyzeAll: true,

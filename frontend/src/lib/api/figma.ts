@@ -1,4 +1,12 @@
 /**
+ * ファイルパス: frontend/src/lib/api/figma.ts
+ * 概要: Figma API クライアント
+ * 機能説明: FIGLEAN フロントエンドからバックエンド経由で Figma API を操作するための API ラッパー群
+ * 作成日: 2026-01-12
+ * 更新日: 2026-01-15
+ * 更新理由: importFigmaFile関数のリクエストボディ修正 - fileKeyパラメータ不足エラー修正
+ * 依存関係: ./client, @/types/api, @/types/figma
+ * 
  * FIGLEAN Frontend - Figma API クライアント
  * --------------------------------------------------
  * このファイルは FIGLEAN フロントエンドから
@@ -9,9 +17,6 @@
  *   ・トークン秘匿
  *   ・FIGLEAN独自解析ロジックの介在
  *   ・将来のAPI差し替え耐性
- *
- * ファイルパス:
- * frontend/src/lib/api/figma.ts
  */
 
 import apiClient from './client';
@@ -103,13 +108,23 @@ export const getFigmaFrames = async (fileKey: string): Promise<any> => {
  * - ノード解析
  * - 命名評価
  * - レイヤ構造評価
+ * 
+ * 修正: バックエンドが期待するfileKeyパラメータを送信するように変更
  */
 export const importFigmaFile = async (
   data: FigmaImportRequest
 ): Promise<FigmaImportResponse> => {
+  // バックエンドが期待する形式に変換
+  const requestBody = {
+    fileKey: data.figmaFileKey,  // バックエンドはfileKeyを期待
+    projectId: data.projectId,
+    importType: data.analyzeAll ? 'all' : 'specific',
+    nodeIds: data.selectedPages || [],
+  };
+  
   const response = await apiClient.post<ApiResponse<FigmaImportResponse>>(
     '/figma/import',
-    data
+    requestBody
   );
   return response.data.data;
 };
