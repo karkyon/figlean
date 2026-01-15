@@ -28,8 +28,8 @@ const prisma = new PrismaClient();
 export interface FigmaCommentRequest {
   message: string;
   client_meta: {
-    node_id: string[];
-    node_offset?: {
+    node_id: string;  // ✅ 文字列
+    node_offset: {
       x: number;
       y: number;
     };
@@ -268,7 +268,11 @@ export async function postCommentToFigma(
   const requestBody: FigmaCommentRequest = {
     message,
     client_meta: {
-      node_id: [nodeId]
+      node_id: nodeId,
+      node_offset: {
+        x: 0,
+        y: 0
+      }
     }
   };
 
