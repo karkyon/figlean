@@ -120,13 +120,6 @@ const CATEGORY_ICONS = {
   STRUCTURE: '🏗️'
 } as const;
 
-const RETRY_CONFIG = {
-  MAX_RETRIES: 3,
-  INITIAL_DELAY: 2000,
-  MAX_DELAY: 10000,
-  BACKOFF_MULTIPLIER: 2
-};
-
 const RATE_LIMIT_CONFIG = {
   BULK_INTERVAL_MS: 1000, // 一括投稿時のインターバル（1秒）
   RATE_LIMIT_CODES: [429, 'RATE_LIMIT', 'TOO_MANY_REQUESTS']
@@ -310,6 +303,7 @@ async function handleFigmaCommentApiError(
 
 /**
  * Figmaにコメントを投稿（リトライ機能付き）
+ * ※将来的な使用のため保持
  * 
  * @param userId - FIGLEANユーザーID
  * @param fileKey - FigmaファイルKey
@@ -424,53 +418,6 @@ async function postCommentToFigmaWithRetry(
 }
 
 /**
- * Figma APIコメント投稿
- * 
- * @param userId - FIGLEANユーザーID
- * @param fileKey - FigmaファイルKey
- * @throws ExternalServiceError - Figma APIエラー
- */
-async function postCommentToFigma(
-  userId: string,
-  fileKey: string,
-  commentRequest: FigmaCommentRequest
-): Promise<FigmaCommentResponse> {
-  const accessToken = await figmaTokenService.getDecryptedToken(userId);
-
-  if (!accessToken) {
-    throw new ExternalServiceError('Figmaトークンが設定されていません');
-  }
-
-  const url = `${config.figma.apiBaseUrl}/v1/files/${fileKey}/comments`;
-
-  try {
-    const response = await fetchWithRetry(url, {
-      method: 'POST',
-      headers: {
-        'X-Figma-Token': accessToken,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(commentRequest)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new ExternalServiceError(
-        `Figma API エラー: ${response.status} ${errorData.message || response.statusText}`
-      );
-    }
-
-    return await response.json();
-  } catch (error: any) {
-    logger.error('Figmaコメント投稿エラー', { error, fileKey });
-    throw new ExternalServiceError(
-      error.message || 'Figmaへのコメント投稿に失敗しました'
-    );
-  }
-}
-
-
-/**
  * Figmaからコメントを削除
  * 
  * @param userId - FIGLEANユーザーID
@@ -486,13 +433,13 @@ export async function deleteCommentFromFigma(
 ): Promise<void> {
   logger.info('🗑️ [SERVICE] deleteCommentFromFigma 開始', { userId, fileKey, commentId });
 
-  const accessToken = await figmaTokenService.getDecryptedToken(userId);
+  const accessToken = await figmaTokenService.getFigmaToken(userId);
 
   if (!accessToken) {
     throw new ExternalServiceError('Figmaトークンが設定されていません');
   }
 
-  const url = `${config.figma.apiBaseUrl}/v1/files/${fileKey}/comments/${commentId}`;
+  const url = `${config.figmaApiBaseUrl}/v1/files/${fileKey}/comments/${commentId}`;
 
   try {
     const response = await fetch(url, {
@@ -514,52 +461,6 @@ export async function deleteCommentFromFigma(
     throw new ExternalServiceError(
       error.message || 'Figmaコメント削除に失敗しました'
     );
-  }
-}
-
-// =====================================
-// レート制限対応付きFetch
-// =====================================
-
-async function fetchWithRetry(
-  url: string,
-  options: RequestInit,
-  retryCount = 0
-): Promise<Response> {
-  try {
-    const response = await fetch(url, options);
-
-    // レート制限エラー検出
-    if (response.status === 429 && retryCount < RETRY_CONFIG.MAX_RETRIES) {
-      const delay = Math.min(
-        RETRY_CONFIG.INITIAL_DELAY * Math.pow(RETRY_CONFIG.BACKOFF_MULTIPLIER, retryCount),
-        RETRY_CONFIG.MAX_DELAY
-      );
-
-      logger.warn(`レート制限検出、${delay}ms後にリトライします`, {
-        retryCount,
-        url
-      });
-
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return fetchWithRetry(url, options, retryCount + 1);
-    }
-
-    return response;
-  } catch (error) {
-    if (retryCount < RETRY_CONFIG.MAX_RETRIES) {
-      const delay = RETRY_CONFIG.INITIAL_DELAY * Math.pow(RETRY_CONFIG.BACKOFF_MULTIPLIER, retryCount);
-      
-      logger.warn(`ネットワークエラー、${delay}ms後にリトライします`, {
-        retryCount,
-        error
-      });
-
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return fetchWithRetry(url, options, retryCount + 1);
-    }
-
-    throw error;
   }
 }
 
@@ -599,19 +500,16 @@ export async function postCommentForViolation(
     const message = generateCommentMessage(violation, commentOptions);
 
     // Figma APIリクエスト構築
-    const commentRequest: FigmaCommentRequest = {
-      message,
-      client_meta: {
-        node_id: violation.frameId,
-        node_offset: { x: 0, y: 0 }
-      }
-    };
+    if (!violation.frameId) {
+      throw new ValidationError('frameIdが設定されていません');
+    }
 
-    // Figmaにコメント投稿
-    const result = await postCommentToFigma(
+    // Figmaにコメント投稿（リトライ機能付き）
+    const commentId = await postCommentToFigmaWithRetry(
       userId,
       violation.project.figmaFileKey,
-      commentRequest
+      violation.frameId,
+      message
     );
 
     // データベース更新
@@ -619,15 +517,15 @@ export async function postCommentForViolation(
       where: { id: violationId },
       data: {
         commentPosted: true,
-        figmaCommentId: result.id
+        figmaCommentId: commentId
       }
     });
 
-    logger.info('✅ [SERVICE] コメント投稿成功', { violationId, commentId: result.id });
+    logger.info('✅ [SERVICE] コメント投稿成功', { violationId, commentId });
 
     return {
       success: true,
-      commentId: result.id,
+      commentId,
       violationId
     };
   } catch (error: any) {
@@ -639,7 +537,6 @@ export async function postCommentForViolation(
     };
   }
 }
-
 
 /**
  * プロジェクト内の全ルール違反に一括コメント投稿
