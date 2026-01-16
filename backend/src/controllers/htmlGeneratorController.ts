@@ -1,14 +1,24 @@
 // =====================================
-// backend/src/controllers/htmlGeneratorController.ts
-// HTML生成コントローラー - FIGLEAN Phase 9
-// 作成日時: 2026年1月12日
-// 説明: HTML生成APIのエンドポイントハンドラー
+// ファイルパス: backend/src/controllers/htmlGeneratorController.ts
+// 概要: HTML生成コントローラー（薄い層）
+// 機能説明:
+//   - リクエスト/レスポンス処理のみ
+//   - Serviceレイヤーへの委譲
+//   - エラーハンドリング
+// 作成日: 2026-01-12
+// 更新日: 2026-01-16 - MVC/三層アーキテクチャ準拠に修正（Service分離）
+// 依存関係:
+//   - express
+//   - ../services/htmlGeneratorService
+//   - ../types/html
+//   - ../utils/logger
 // =====================================
 
 import { Request, Response, NextFunction } from 'express';
 import { getHTMLGeneratorService } from '../services/htmlGeneratorService';
 import type { HTMLGeneratorOptions } from '../types/html';
 import logger from '../utils/logger';
+import { ValidationError } from '../errors';
 
 /**
  * 認証済みリクエストの型定義
@@ -30,13 +40,10 @@ interface AuthenticatedRequest extends Request {
 const htmlGeneratorService = getHTMLGeneratorService();
 
 // =====================================
-// P0: HTML生成実行
+// POST /api/html/generate/:projectId
+// HTML生成実行
 // =====================================
 
-/**
- * POST /api/html/generate/:projectId
- * HTML生成を実行
- */
 export async function generateHTMLController(
   req: AuthenticatedRequest,
   res: Response,
@@ -46,31 +53,17 @@ export async function generateHTMLController(
     const { projectId } = req.params;
     const userId = req.user.userId;
 
-    logger.info('HTML生成リクエスト受信', { projectId, userId });
+    logger.info('🔵 [CONTROLLER] generateHTMLController', { projectId, userId });
 
-    // リクエストボディのバリデーション
-    const options: HTMLGeneratorOptions = {
-      framework: req.body.framework || 'HTML_TAILWIND',
-      includeResponsive: req.body.includeResponsive !== false,
-      includeGrid: req.body.includeGrid || false,
+    // リクエストボディからオプションを抽出（バリデーションはServiceで実施）
+    const options: Partial<HTMLGeneratorOptions> = {
+      framework: req.body.framework,
+      includeResponsive: req.body.includeResponsive,
+      includeGrid: req.body.includeGrid,
       breakpoints: req.body.breakpoints,
-      minifyOutput: req.body.minifyOutput || false,
-      includeComments: req.body.includeComments || false
+      minifyOutput: req.body.minifyOutput,
+      includeComments: req.body.includeComments
     };
-
-    // フレームワーク検証
-    const validFrameworks = ['HTML_TAILWIND', 'REACT_JSX', 'VUE_SFC'];
-    if (!validFrameworks.includes(options.framework)) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_FRAMEWORK',
-          message: `Invalid framework. Must be one of: ${validFrameworks.join(', ')}`,
-          details: { framework: options.framework }
-        }
-      });
-      return;
-    }
 
     // TODO: プロジェクト情報取得（Prisma経由）
     // const project = await prisma.project.findUnique({
@@ -107,7 +100,7 @@ export async function generateHTMLController(
     };
     const mockScore = 95;
 
-    // HTML生成実行
+    // HTML生成実行（Serviceレイヤーに委譲）
     const result = await htmlGeneratorService.generateHTML(
       projectId,
       userId,
@@ -130,9 +123,8 @@ export async function generateHTMLController(
     //   }
     // });
 
-    logger.info('HTML生成成功', {
+    logger.info('✅ [CONTROLLER] HTML生成成功', {
       projectId,
-      userId,
       generatedId: result.id,
       generationTimeMs: result.generationTimeMs
     });
@@ -149,22 +141,21 @@ export async function generateHTMLController(
       }
     });
   } catch (error) {
-    logger.error('HTML生成エラー', { 
-      projectId: req.params.projectId, 
-      userId: req.user.userId,
-      error 
+    logger.error('❌ [CONTROLLER] generateHTMLController エラー', {
+      error,
+      requestId: req.id
     });
 
-    // スコア不足エラー
-    if (error instanceof Error && error.message.includes('90%以上が必要')) {
+    // バリデーションエラー（スコア不足など）
+    if (error instanceof ValidationError) {
+      // エラーメッセージからスコア不足かどうかを判定
+      const isScoreTooLow = error.message.includes('FIGLEAN') || error.message.includes('スコア');
+      
       res.status(400).json({
         success: false,
         error: {
-          code: 'SCORE_TOO_LOW',
-          message: error.message,
-          details: {
-            requiredScore: 90
-          }
+          code: isScoreTooLow ? 'SCORE_TOO_LOW' : 'VALIDATION_ERROR',
+          message: error.message
         }
       });
       return;
@@ -175,13 +166,10 @@ export async function generateHTMLController(
 }
 
 // =====================================
-// P0: プレビュー取得
+// GET /api/html/:projectId/preview
+// プレビュー取得
 // =====================================
 
-/**
- * GET /api/html/:projectId/preview
- * 生成されたHTMLのプレビューを取得
- */
 export async function getHTMLPreviewController(
   req: AuthenticatedRequest,
   res: Response,
@@ -191,7 +179,7 @@ export async function getHTMLPreviewController(
     const { projectId } = req.params;
     const userId = req.user.userId;
 
-    logger.info('HTMLプレビュー取得', { projectId, userId });
+    logger.info('🔵 [CONTROLLER] getHTMLPreviewController', { projectId, userId });
 
     // TODO: 生成済みHTMLを取得
     // const generatedHTML = await prisma.generatedHTML.findFirst({
@@ -220,29 +208,26 @@ export async function getHTMLPreviewController(
 </body>
 </html>`;
 
-    // プレビューHTML生成
+    // プレビューHTML生成（Serviceレイヤーに委譲）
     const previewHTML = htmlGeneratorService.generatePreview(mockHTMLCode);
 
     // HTMLを直接返す
     res.setHeader('Content-Type', 'text/html');
     res.send(previewHTML);
   } catch (error) {
-    logger.error('HTMLプレビュー取得エラー', { 
-      projectId: req.params.projectId, 
-      error 
+    logger.error('❌ [CONTROLLER] getHTMLPreviewController エラー', {
+      error,
+      requestId: req.id
     });
     next(error);
   }
 }
 
 // =====================================
-// P1: ダウンロード
+// GET /api/html/:projectId/download
+// ダウンロード
 // =====================================
 
-/**
- * GET /api/html/:projectId/download
- * 生成されたHTMLをZIPファイルとしてダウンロード
- */
 export async function downloadHTMLController(
   req: AuthenticatedRequest,
   res: Response,
@@ -252,7 +237,7 @@ export async function downloadHTMLController(
     const { projectId } = req.params;
     const userId = req.user.userId;
 
-    logger.info('HTMLダウンロード', { projectId, userId });
+    logger.info('🔵 [CONTROLLER] downloadHTMLController', { projectId, userId });
 
     // TODO: 生成済みHTMLを取得
     // const generatedHTML = await prisma.generatedHTML.findFirst({
@@ -272,7 +257,7 @@ export async function downloadHTMLController(
     const mockProjectName = 'figlean-project';
     const mockHTMLCode = '<!DOCTYPE html><html>...</html>';
 
-    // ZIPファイル生成（将来実装）
+    // ZIPファイル生成（Serviceレイヤーに委譲）
     const zipContent = await htmlGeneratorService.generateDownloadZip(
       mockHTMLCode,
       mockProjectName
@@ -283,22 +268,19 @@ export async function downloadHTMLController(
     res.setHeader('Content-Disposition', `attachment; filename="${mockProjectName}.html"`);
     res.send(zipContent);
   } catch (error) {
-    logger.error('HTMLダウンロードエラー', { 
-      projectId: req.params.projectId, 
-      error 
+    logger.error('❌ [CONTROLLER] downloadHTMLController エラー', {
+      error,
+      requestId: req.id
     });
     next(error);
   }
 }
 
 // =====================================
-// P1: 生成履歴取得
+// GET /api/html/:projectId/history
+// 生成履歴取得
 // =====================================
 
-/**
- * GET /api/html/:projectId/history
- * HTML生成履歴を取得
- */
 export async function getHTMLHistoryController(
   req: AuthenticatedRequest,
   res: Response,
@@ -312,7 +294,12 @@ export async function getHTMLHistoryController(
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
     const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
 
-    logger.info('HTML生成履歴取得', { projectId, userId, limit, offset });
+    logger.info('🔵 [CONTROLLER] getHTMLHistoryController', {
+      projectId,
+      userId,
+      limit,
+      offset
+    });
 
     // TODO: 生成履歴を取得
     // const history = await prisma.generatedHTML.findMany({
@@ -355,22 +342,19 @@ export async function getHTMLHistoryController(
       }
     });
   } catch (error) {
-    logger.error('HTML生成履歴取得エラー', { 
-      projectId: req.params.projectId, 
-      error 
+    logger.error('❌ [CONTROLLER] getHTMLHistoryController エラー', {
+      error,
+      requestId: req.id
     });
     next(error);
   }
 }
 
 // =====================================
-// P2: 削除
+// DELETE /api/html/:generatedId
+// 削除
 // =====================================
 
-/**
- * DELETE /api/html/:generatedId
- * 生成されたHTMLを削除
- */
 export async function deleteGeneratedHTMLController(
   req: AuthenticatedRequest,
   res: Response,
@@ -380,7 +364,7 @@ export async function deleteGeneratedHTMLController(
     const { generatedId } = req.params;
     const userId = req.user.userId;
 
-    logger.info('生成HTML削除', { generatedId, userId });
+    logger.info('🔵 [CONTROLLER] deleteGeneratedHTMLController', { generatedId, userId });
 
     // TODO: 所有権確認と削除
     // const generatedHTML = await prisma.generatedHTML.findUnique({
@@ -398,16 +382,16 @@ export async function deleteGeneratedHTMLController(
     //   where: { id: generatedId }
     // });
 
-    logger.info('生成HTML削除成功', { generatedId, userId });
+    logger.info('✅ [CONTROLLER] 生成HTML削除成功', { generatedId });
 
     res.json({
       success: true,
       message: '生成されたHTMLを削除しました'
     });
   } catch (error) {
-    logger.error('生成HTML削除エラー', { 
-      generatedId: req.params.generatedId, 
-      error 
+    logger.error('❌ [CONTROLLER] deleteGeneratedHTMLController エラー', {
+      error,
+      requestId: req.id
     });
     next(error);
   }
