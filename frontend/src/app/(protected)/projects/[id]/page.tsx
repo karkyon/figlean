@@ -1,38 +1,45 @@
-// =====================================
-// ファイルパス: frontend/src/app/(protected)/projects/[id]/page.tsx
-// 概要: プロジェクト詳細ページ - ページング・フィルター対応版
-// 機能説明:
-//   - プロジェクト基本情報表示
-//   - タブナビゲーション（概要/違反/崩壊/提案/生成）
-//   - ルール違反一覧（ページング、フィルター、一括コメント投稿）
-//   - 崩壊予測一覧
-//   - 改善提案一覧
-// 作成日: 2026-01-12
-// 更新日: 2026-01-16 - ページング機能追加、コメント投稿済みフィルター追加、一括投稿エラー対策
-// 依存関係:
-//   - react
-//   - next/navigation
-//   - @/lib/api/projects
-//   - @/lib/api/analysis
-//   - @/lib/api/figma
-//   - @/store/authStore
-//   - @/lib/logger
-// =====================================
+/**
+ * FIGLEAN Frontend - プロジェクト詳細ページ（日本語化版）
+ * ファイルパス: frontend/src/app/(protected)/projects/[id]/page.tsx
+ * 
+ * 機能:
+ * - プロジェクト基本情報表示
+ * - FIGLEAN適合度スコア表示
+ * - タブナビゲーション（概要 / 違反 / 崩壊予測 / 改善提案 / 生成）
+ * - 診断結果カード表示
+ * - HTML生成機能（Generator Tab）
+ * - Figmaコメント一括投稿機能
+ * - ローディング状態管理
+ * - エラーハンドリング
+ * 
+ * 作成日: 2026年1月13日
+ * 更新日: 2026年1月16日 - Figmaコメント確認ボタン追加、ページネーション改善、再解析機能実装
+ * 依存関係: @/components/ui/Button, @/components/analysis/*, @/lib/api/client
+ */
 
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/store/authStore';
-import * as projectsApi from '@/lib/api/projects';
-import * as analysisApi from '@/lib/api/analysis';
-import * as figmaApi from '@/lib/api/figma';
-import type { Project, Violation, Prediction, Suggestion } from '@/types/models';
-import logger from '@/lib/logger';
+import { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/Button';
+import { ViolationCard } from '@/components/analysis/ViolationCard';
+import { PredictionCard } from '@/components/analysis/PredictionCard';
+import { SuggestionCard } from '@/components/analysis/SuggestionCard';
+import GeneratorTab from '@/components/project/GeneratorTab';
+import { Project, Violation, Prediction, Suggestion } from '@/types/models';
+import apiClient from '@/lib/api/client';
+import { logger } from '@/lib/logger';
 
+// =====================================
 // ローカル型定義（API専用）
+// =====================================
+
 interface AnalysisResult {
   figleanScore: number;
+  layoutScore: number;
+  componentScore: number;
+  responsiveScore: number;
+  semanticScore: number;
   canGenerateHTML: boolean;
   canUseGrid: boolean;
   violations: {
@@ -44,304 +51,214 @@ interface AnalysisResult {
   analyzedAt: string;
 }
 
-// =====================================
-// 型定義
-// =====================================
-
-type TabType = 'overview' | 'violations' | 'predictions' | 'suggestions' | 'generate';
+type Tab = 'overview' | 'violations' | 'predictions' | 'suggestions' | 'generator';
 
 // =====================================
-// プロジェクト詳細ページ
+// メインコンポーネント
 // =====================================
 
-export default function ProjectDetailPage({ params }: { params: { id: string } }) {
+export default function ProjectDetailPage() {
+  const params = useParams();
   const router = useRouter();
-  const { user } = useAuthStore();
-  const projectId = params.id;
+  const projectId = params?.id as string;
 
-  // プロジェクト情報
   const [project, setProject] = useState<Project | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [violations, setViolations] = useState<Violation[]>([]);
+  const [violationsTotal, setViolationsTotal] = useState<number>(0);
+  const [predictions, setPredictions] = useState<Prediction[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingTab, setIsLoadingTab] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // タブ管理
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
-  
-  // 違反データ
-  const [violations, setViolations] = useState<Violation[]>([]);
-  const [violationsTotal, setViolationsTotal] = useState(0);
-  const [violationsLoading, setViolationsLoading] = useState(false);
-
-  // ページング・フィルター
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(20);
-  const [severityFilter, setSeverityFilter] = useState<string>('ALL');
-  const [commentPostedFilter, setCommentPostedFilter] = useState<string>('ALL');
-
-  // 崩壊予測データ
-  const [predictions, setPredictions] = useState<Prediction[]>([]);
-  const [predictionsLoading, setPredictionsLoading] = useState(false);
-
-  // 改善提案データ
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-
-  // 一括コメント投稿
+  // Figmaコメント一括投稿状態
   const [isBulkPosting, setIsBulkPosting] = useState(false);
-  const [bulkPostProgress, setBulkPostProgress] = useState<{
-    current: number;
-    total: number;
-    successCount: number;
-    failureCount: number;
-  } | null>(null);
 
-  // =====================================
-  // データ取得
-  // =====================================
+  // 再解析状態
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
+
+  // 違反フィルター・ページング状態
+  const [severityFilter, setSeverityFilter] = useState<'ALL' | 'CRITICAL' | 'MAJOR' | 'MINOR'>('ALL');
+  const [commentPostedFilter, setCommentPostedFilter] = useState<'ALL' | 'POSTED' | 'NOT_POSTED'>('ALL');
+  const [itemsPerPage, setItemsPerPage] = useState<number>(20);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   useEffect(() => {
-    fetchProjectAndAnalysis();
+    if (projectId) {
+      logger.component('ProjectDetailPage', 'Mount', { projectId });
+      loadProject();
+    }
   }, [projectId]);
 
   useEffect(() => {
-    if (activeTab === 'violations') {
-      fetchViolations();
-    } else if (activeTab === 'predictions') {
-      fetchPredictions();
-    } else if (activeTab === 'suggestions') {
-      fetchSuggestions();
+    logger.component('ProjectDetailPage', `Tab Changed: ${activeTab}`, { projectId, activeTab });
+    if (activeTab !== 'overview' && activeTab !== 'generator') {
+      loadTabData();
     }
-  }, [activeTab, currentPage, itemsPerPage, severityFilter, commentPostedFilter]);
+  }, [activeTab]);
 
-  const fetchProjectAndAnalysis = async () => {
+  const loadProject = async () => {
     try {
+      logger.info('プロジェクト読み込み開始', { projectId });
       setIsLoading(true);
       setError(null);
-      logger.info('プロジェクト読み込み開始', { projectId });
 
-      // プロジェクト取得
-      const projectResponse = await projectsApi.getProjectById(projectId);
-      setProject(projectResponse);
+      logger.api('GET', `/projects/${projectId}`);
+      const projectResponse = await apiClient.get(`/projects/${projectId}`);
+      setProject(projectResponse.data.data);
+      logger.apiSuccess('GET', `/projects/${projectId}`, { project: projectResponse.data.data });
 
-      // 診断結果取得
-      const analysisResponse = await analysisApi.getAnalysisSummary(projectId);
-      setAnalysisResult(analysisResponse.data);
+      try {
+        logger.api('GET', `/analysis/${projectId}`);
+        const analysisResponse = await apiClient.get(`/analysis/${projectId}`);
+        setAnalysisResult(analysisResponse.data.data);
+        logger.apiSuccess('GET', `/analysis/${projectId}`, { analysisResult: analysisResponse.data.data });
+      } catch (analysisError: any) {
+        if (analysisError.response?.status !== 404) {
+          logger.apiError('GET', `/analysis/${projectId}`, analysisError);
+          console.error('Failed to load analysis:', analysisError);
+        } else {
+          logger.warn('解析結果が見つかりません', { projectId });
+        }
+      }
 
       logger.success('プロジェクト読み込み完了', { projectId });
-    } catch (error: any) {
-      console.error('プロジェクト読み込みエラー:', error);
-      logger.error('プロジェクト読み込みエラー', error);
-      setError('プロジェクトの読み込みに失敗しました');
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.error?.message || 'プロジェクトの読み込みに失敗しました';
+      logger.error('プロジェクト読み込み失敗', err, { projectId, errorMessage });
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const fetchViolations = async () => {
+  const loadTabData = async () => {
+    if (!projectId) return;
+
     try {
-      setViolationsLoading(true);
-      logger.info('タブデータ読み込み開始: violations', { projectId, currentPage, itemsPerPage });
+      logger.info(`タブデータ読み込み開始: ${activeTab}`, { projectId, activeTab });
+      setIsLoadingTab(true);
 
-      const offset = (currentPage - 1) * itemsPerPage;
-      
-      const params: any = {
-        limit: itemsPerPage,
-        offset
-      };
-
-      if (severityFilter !== 'ALL') {
-        params.severity = severityFilter;
+      if (activeTab === 'violations') {
+        logger.api('GET', `/analysis/${projectId}/violations`);
+        const response = await apiClient.get(`/analysis/${projectId}/violations`);
+        
+        setViolations(response.data.data.violations || []);
+        setViolationsTotal(response.data.data.total || 0);
+        
+        logger.apiSuccess('GET', `/analysis/${projectId}/violations`, { 
+          count: response.data.data.violations?.length || 0,
+          total: response.data.data.total || 0
+        });
+      } else if (activeTab === 'predictions') {
+        logger.api('GET', `/analysis/${projectId}/predictions`);
+        const response = await apiClient.get(`/analysis/${projectId}/predictions`);
+        setPredictions(response.data.data.predictions || []);
+        logger.apiSuccess('GET', `/analysis/${projectId}/predictions`, { count: response.data.data.predictions?.length || 0 });
+      } else if (activeTab === 'suggestions') {
+        logger.api('GET', `/analysis/${projectId}/suggestions`);
+        const response = await apiClient.get(`/analysis/${projectId}/suggestions`);
+        setSuggestions(response.data.data.suggestions || []);
+        logger.apiSuccess('GET', `/analysis/${projectId}/suggestions`, { count: response.data.data.suggestions?.length || 0 });
       }
 
-      if (commentPostedFilter !== 'ALL') {
-        params.commentPosted = commentPostedFilter === 'POSTED' ? 'true' : 'false';
+      logger.success(`タブデータ読み込み完了: ${activeTab}`, { projectId, activeTab });
+    } catch (err: any) {
+      logger.apiError('GET', `/analysis/${projectId}/${activeTab}`, err);
+      console.error(`Failed to load ${activeTab}:`, err);
+    } finally {
+      setIsLoadingTab(false);
+    }
+  };
+
+  // 再解析実行
+  const handleReanalyze = async () => {
+    if (!projectId) return;
+
+    const confirmed = confirm(
+      'プロジェクトの再解析を実行しますか?\n\nFigmaデータを再取得し、FIGLEAN適合度スコアを再計算します。'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setIsReanalyzing(true);
+      logger.info('再解析開始', { projectId });
+
+      await apiClient.post(`/analysis/${projectId}/reanalyze`);
+
+      alert('再解析が完了しました');
+      logger.success('再解析完了', { projectId });
+
+      await loadProject();
+      if (activeTab !== 'overview' && activeTab !== 'generator') {
+        await loadTabData();
       }
-
-      const response = await analysisApi.getViolations(projectId, params);
-      setViolations(response.data.violations);
-      setViolationsTotal(response.data.total);
-
-      logger.success('タブデータ読み込み完了: violations', { 
-        projectId, 
-        count: response.data.violations.length,
-        total: response.data.total
-      });
     } catch (error: any) {
-      console.error('違反データ取得エラー:', error);
-      logger.error('違反データ取得エラー', error);
+      console.error('再解析エラー:', error);
+      const errorMessage = error.response?.data?.error?.message || '再解析に失敗しました';
+      alert(errorMessage);
+      logger.error('再解析失敗', error, { projectId, errorMessage });
     } finally {
-      setViolationsLoading(false);
+      setIsReanalyzing(false);
     }
   };
 
-  const fetchPredictions = async () => {
-    try {
-      setPredictionsLoading(true);
-      logger.info('タブデータ読み込み開始: predictions', { projectId });
+  const filteredViolations = violations.filter(v => {
+    if (severityFilter !== 'ALL' && v.severity !== severityFilter) return false;
+    if (commentPostedFilter === 'POSTED' && !v.commentPosted) return false;
+    if (commentPostedFilter === 'NOT_POSTED' && v.commentPosted) return false;
+    return true;
+  });
 
-      const response = await analysisApi.getPredictions(projectId);
-      setPredictions(response.data.predictions);
+  const totalPages = Math.ceil(filteredViolations.length / itemsPerPage);
 
-      logger.success('タブデータ読み込み完了: predictions', { 
-        projectId, 
-        count: response.data.predictions.length 
-      });
-    } catch (error: any) {
-      console.error('崩壊予測取得エラー:', error);
-      logger.error('崩壊予測取得エラー', error);
-    } finally {
-      setPredictionsLoading(false);
-    }
-  };
+  const paginatedViolations = filteredViolations.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
-  const fetchSuggestions = async () => {
-    try {
-      setSuggestionsLoading(true);
-      logger.info('タブデータ読み込み開始: suggestions', { projectId });
-
-      const response = await analysisApi.getSuggestions(projectId);
-      setSuggestions(response.data.suggestions);
-
-      logger.success('タブデータ読み込み完了: suggestions', { 
-        projectId, 
-        count: response.data.suggestions.length 
-      });
-    } catch (error: any) {
-      console.error('改善提案取得エラー:', error);
-      logger.error('改善提案取得エラー', error);
-    } finally {
-      setSuggestionsLoading(false);
-    }
-  };
-
-  // =====================================
-  // ページネーション
-  // =====================================
-
-  const totalPages = Math.ceil(violationsTotal / itemsPerPage);
-
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setCurrentPage(newPage);
-    }
-  };
-
-  const handleItemsPerPageChange = (newItemsPerPage: number) => {
-    setItemsPerPage(newItemsPerPage);
-    setCurrentPage(1); // ページをリセット
-  };
-
-  // =====================================
-  // コメント投稿
-  // =====================================
-
-  const handleSingleCommentPost = async (violationId: string) => {
-    try {
-      logger.info('個別コメント投稿開始', { projectId, violationId });
-      await figmaApi.postFigmaComment(projectId, violationId);
-      logger.success('個別コメント投稿成功', { projectId, violationId });
-      
-      // データ再取得
-      await fetchViolations();
-      alert('Figmaにコメントを投稿しました！');
-    } catch (error: any) {
-      console.error('個別コメント投稿エラー:', error);
-      logger.error('個別コメント投稿失敗', error, { projectId, violationId });
-      alert('コメント投稿に失敗しました');
-    }
-  };
-
+  // Figmaコメント一括投稿
   const handleBulkPostComments = async () => {
-    if (!confirm('未投稿のルール違反すべてにFigmaコメントを一括投稿しますか？\n※大量の違反がある場合は時間がかかります')) {
-      return;
-    }
+    if (!projectId || !violations.length) return;
+
+    const confirmed = confirm(
+      `全 ${violations.length} 件のルール違反をFigmaにコメント投稿しますか?\n\n※投稿済みの違反は除外されます`
+    );
+
+    if (!confirmed) return;
 
     try {
       setIsBulkPosting(true);
-      logger.info('一括コメント投稿開始', { projectId });
+      logger.info('一括コメント投稿開始', { projectId, violationCount: violations.length });
 
-      // 未投稿の違反数を取得
-      const unpostedResponse = await analysisApi.getViolations(projectId, {
-        commentPosted: 'false',
-        limit: 1000
-      });
-      const unpostedCount = unpostedResponse.data.total;
-
-      setBulkPostProgress({
-        current: 0,
-        total: unpostedCount,
-        successCount: 0,
-        failureCount: 0
+      await apiClient.post(`/figma/comments/${projectId}`, {
+        includeFixSteps: true,
+        includeDetectedValue: true,
+        language: 'ja'
       });
 
-      // Backend APIで一括投稿（レート制限対策済み）
-      const response = await fetch(`/api/figma/comments/${projectId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          includeFixSteps: true,
-          includeDetectedValue: true,
-          language: 'ja'
-        })
-      });
+      await loadTabData();
 
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
-      }
-
-      const result = await response.json();
-      
-      logger.success('一括コメント投稿完了', { 
-        projectId,
-        successCount: result.data.successCount,
-        failureCount: result.data.failureCount
-      });
-
-      setBulkPostProgress({
-        current: result.data.totalViolations,
-        total: result.data.totalViolations,
-        successCount: result.data.successCount,
-        failureCount: result.data.failureCount
-      });
-
-      // データ再取得
-      await fetchViolations();
-
-      if (result.data.failureCount > 0) {
-        alert(
-          `一括コメント投稿が完了しました。\n` +
-          `成功: ${result.data.successCount}件\n` +
-          `失敗: ${result.data.failureCount}件\n\n` +
-          `※失敗した投稿はFigma APIのレート制限が原因の可能性があります。\n` +
-          `しばらく時間を置いてから再度お試しください。`
-        );
-      } else {
-        alert(`一括コメント投稿が完了しました！\n成功: ${result.data.successCount}件`);
-      }
-
+      alert('Figmaコメントの一括投稿が完了しました');
+      logger.success('一括コメント投稿完了', { projectId });
     } catch (error: any) {
       console.error('一括コメント投稿エラー:', error);
+      alert('一括コメント投稿に失敗しました');
       logger.error('一括コメント投稿失敗', error, { projectId });
-      alert('一括コメント投稿に失敗しました。\nしばらく時間を置いてから再度お試しください。');
     } finally {
       setIsBulkPosting(false);
-      setBulkPostProgress(null);
     }
   };
-
-  // =====================================
-  // レンダリング
-  // =====================================
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+          <div className="animate-spin text-4xl mb-4">⏳</div>
           <p className="text-gray-600">読み込み中...</p>
         </div>
       </div>
@@ -353,518 +270,518 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <p className="text-red-600 mb-4">{error || 'プロジェクトが見つかりません'}</p>
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-          >
+          <Button onClick={() => router.push('/dashboard')}>
             ダッシュボードに戻る
-          </button>
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="max-w-7xl mx-auto px-4 py-8">
       {/* ヘッダー */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <button
-                onClick={() => router.push('/dashboard')}
-                className="text-sm text-gray-600 hover:text-gray-900 mb-2 flex items-center gap-1"
+      <div className="mb-8">
+        <button
+          onClick={() => router.push('/dashboard')}
+          className="text-sm text-gray-600 hover:text-gray-900 mb-4 flex items-center gap-1"
+        >
+          ← 戻る
+        </button>
+        
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">{project.name}</h1>
+            {project.description && (
+              <p className="text-gray-600">{project.description}</p>
+            )}
+            <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+              <a
+                href={`https://www.figma.com/file/${project.figmaFileKey}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
               >
-                ← ダッシュボードに戻る
-              </button>
-              <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
-              <p className="text-sm text-gray-600 mt-1">
-                Figmaファイル: {project.figmaFileName || 'N/A'}
+                🔗 Figmaで開く
+              </a>
+              <span>📊 最終解析: {analysisResult ? new Date(analysisResult.analyzedAt).toLocaleDateString('ja-JP') : '未解析'}</span>
+              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                project.analysisStatus === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                project.analysisStatus === 'ANALYZING' ? 'bg-blue-100 text-blue-800' :
+                project.analysisStatus === 'FAILED' ? 'bg-red-100 text-red-800' :
+                'bg-gray-100 text-gray-800'
+              }`}>
+                {project.analysisStatus === 'COMPLETED' ? '完了' :
+                 project.analysisStatus === 'ANALYZING' ? '解析中' :
+                 project.analysisStatus === 'FAILED' ? '失敗' : '未解析'}
+              </span>
+            </div>
+          </div>
+
+          <Button 
+            variant="primary"
+            onClick={handleReanalyze}
+            disabled={isReanalyzing}
+          >
+            {isReanalyzing ? '再解析中...' : '🔄 再解析'}
+          </Button>
+        </div>
+      </div>
+
+      {/* FIGLEAN適合度スコア */}
+      {project.figleanScore !== null && (
+        <div className="bg-white rounded-lg border p-6 mb-8 shadow-sm">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+            <div className="text-center">
+              <h3 className="text-sm text-gray-600 mb-2">FIGLEAN適合度</h3>
+              <div className={`text-4xl font-bold ${
+                project.figleanScore >= 90 ? 'text-green-600' :
+                project.figleanScore >= 70 ? 'text-yellow-600' :
+                'text-red-600'
+              }`}>
+                {project.figleanScore}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {project.figleanScore < 70 ? '⚠️ 改善推奨' : ''}
               </p>
             </div>
-            
-            {analysisResult && (
-              <div className="text-center">
-                <p className="text-sm text-gray-600 mb-1">FIGLEANスコア</p>
-                <p className={`text-5xl font-bold ${
-                  analysisResult.figleanScore >= 90 ? 'text-green-600' :
-                  analysisResult.figleanScore >= 70 ? 'text-yellow-600' :
-                  'text-red-600'
-                }`}>
-                  {analysisResult.figleanScore}
-                </p>
+
+            <div className="text-center">
+              <h3 className="text-sm text-gray-600 mb-2">Layout</h3>
+              <div className="text-3xl font-bold text-gray-900">
+                {project.layoutScore || '-'}
               </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* タブナビゲーション */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex space-x-8">
-            {[
-              { id: 'overview', label: '📊 概要' },
-              { id: 'violations', label: `⚠️ 違反${analysisResult ? ` ${analysisResult.violations.critical + analysisResult.violations.major + analysisResult.violations.minor}` : ''}` },
-              { id: 'predictions', label: '🔮 崩壊予測' },
-              { id: 'suggestions', label: '💡 改善提案' },
-              { id: 'generate', label: '🚀 コード生成' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id as TabType);
-                  logger.component('ProjectDetailPage', `Tab Changed: ${tab.id}`, { tab: tab.id });
-                }}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === tab.id
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-        </div>
-      </div>
-
-      {/* コンテンツエリア */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* 概要タブ */}
-        {activeTab === 'overview' && (
-          <div className="space-y-6">
-            {analysisResult ? (
-              <div className="space-y-6">
-                {/* HTML生成可否 */}
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">生成機能</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-sm text-gray-600 mb-1">HTML生成</p>
-                      <p className="text-2xl font-bold">
-                        {analysisResult.canGenerateHTML ? '✅ 可能' : '⚠️ 要改善'}
-                      </p>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-sm text-gray-600 mb-1">Grid変換</p>
-                      <p className="text-2xl font-bold">
-                        {analysisResult.canUseGrid ? '✅ 可能' : '❌ 不可'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 違反統計 */}
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">ルール違反統計</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                      <p className="text-sm text-red-800 mb-1">🔴 重大</p>
-                      <p className="text-3xl font-bold text-red-600">
-                        {analysisResult.violations.critical}
-                      </p>
-                    </div>
-                    <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
-                      <p className="text-sm text-yellow-800 mb-1">🟡 警告</p>
-                      <p className="text-3xl font-bold text-yellow-600">
-                        {analysisResult.violations.major}
-                      </p>
-                    </div>
-                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                      <p className="text-sm text-blue-800 mb-1">🔵 軽微</p>
-                      <p className="text-3xl font-bold text-blue-600">
-                        {analysisResult.violations.minor}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 次のステップ */}
-                <div className="bg-indigo-50 rounded-lg p-6 border border-indigo-200">
-                  <h3 className="text-lg font-semibold text-indigo-900 mb-3">
-                    💡 次のステップ
-                  </h3>
-                  <ul className="space-y-2 text-sm text-indigo-800">
-                    <li>• 違反タブで詳細なルール違反を確認</li>
-                    <li>• 崩壊予測タブで崩れリスクを把握</li>
-                    <li>• 改善提案タブで改善提案を確認</li>
-                    {analysisResult.canGenerateHTML && (
-                      <li>• 生成タブで実際のHTMLコードを生成</li>
-                    )}
-                  </ul>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-20 text-gray-500">
-                診断結果がまだありません
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 違反タブ */}
-        {activeTab === 'violations' && (
-          <div className="space-y-6">
-            {/* フィルター・ページング制御 */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                {/* 左側: フィルター */}
-                <div className="flex flex-wrap items-center gap-4">
-                  {/* 重要度フィルター */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      重要度
-                    </label>
-                    <select
-                      value={severityFilter}
-                      onChange={(e) => {
-                        setSeverityFilter(e.target.value);
-                        setCurrentPage(1);
-                      }}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="ALL">すべて</option>
-                      <option value="CRITICAL">🔴 重大</option>
-                      <option value="MAJOR">🟡 警告</option>
-                      <option value="MINOR">🔵 軽微</option>
-                    </select>
-                  </div>
-
-                  {/* コメント投稿済みフィルター */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      コメント投稿
-                    </label>
-                    <select
-                      value={commentPostedFilter}
-                      onChange={(e) => {
-                        setCommentPostedFilter(e.target.value);
-                        setCurrentPage(1);
-                      }}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="ALL">すべて</option>
-                      <option value="NOT_POSTED">未投稿のみ</option>
-                      <option value="POSTED">投稿済みのみ</option>
-                    </select>
-                  </div>
-
-                  {/* 表示件数 */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      表示件数
-                    </label>
-                    <select
-                      value={itemsPerPage}
-                      onChange={(e) => handleItemsPerPageChange(parseInt(e.target.value))}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="20">20件</option>
-                      <option value="30">30件</option>
-                      <option value="50">50件</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* 右側: 一括投稿ボタン */}
-                <div>
-                  <button
-                    onClick={handleBulkPostComments}
-                    disabled={isBulkPosting || violations.length === 0}
-                    className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-                      isBulkPosting || violations.length === 0
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                    }`}
-                  >
-                    {isBulkPosting ? (
-                      <span className="flex items-center gap-2">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        投稿中...
-                      </span>
-                    ) : (
-                      '💬 一括コメント投稿'
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* 進捗表示 */}
-              {bulkPostProgress && (
-                <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="text-sm font-medium text-blue-900 mb-2">
-                    投稿進捗: {bulkPostProgress.current} / {bulkPostProgress.total}
-                  </p>
-                  <div className="w-full bg-blue-200 rounded-full h-2 mb-2">
-                    <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${(bulkPostProgress.current / bulkPostProgress.total) * 100}%` }}
-                    ></div>
-                  </div>
-                  <p className="text-xs text-blue-800">
-                    成功: {bulkPostProgress.successCount} / 失敗: {bulkPostProgress.failureCount}
-                  </p>
-                </div>
-              )}
-
-              {/* 表示情報 */}
-              <div className="mt-4 text-sm text-gray-600">
-                全 {violationsTotal} 件中 {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, violationsTotal)} 件を表示
-              </div>
+              <p className="text-xs text-gray-500 mt-1">レイアウト設計</p>
             </div>
 
-            {/* 違反リスト */}
-            {violationsLoading ? (
-              <div className="text-center py-20">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                <p className="text-gray-600">読み込み中...</p>
+            <div className="text-center">
+              <h3 className="text-sm text-gray-600 mb-2">Component</h3>
+              <div className="text-3xl font-bold text-gray-900">
+                {project.componentScore || '-'}
               </div>
-            ) : violations.length > 0 ? (
-              <div className="space-y-4">
-                {violations.map((violation) => (
-                  <div key={violation.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                    {/* ヘッダー */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            violation.severity === 'CRITICAL' ? 'bg-red-100 text-red-800' :
-                            violation.severity === 'MAJOR' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-blue-100 text-blue-800'
-                          }`}>
-                            {violation.severity === 'CRITICAL' ? '🔴 重大' :
-                             violation.severity === 'MAJOR' ? '🟡 警告' : '🔵 軽微'}
-                          </span>
-                          <span className="text-sm text-gray-600">
-                            {violation.ruleCategory}
-                          </span>
-                          {violation.commentPosted && (
-                            <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-                              ✓ 投稿済み
-                            </span>
-                          )}
-                        </div>
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {violation.frameName}
-                        </h3>
-                        <p className="text-sm text-gray-600 mt-1">
-                          ルール: {violation.ruleName}
+              <p className="text-xs text-gray-500 mt-1">コンポーネント化</p>
+            </div>
+
+            <div className="text-center">
+              <h3 className="text-sm text-gray-600 mb-2">Responsive</h3>
+              <div className="text-3xl font-bold text-gray-900">
+                {project.responsiveScore || '-'}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">レスポンシブ対応</p>
+            </div>
+
+            <div className="text-center">
+              <h3 className="text-sm text-gray-600 mb-2">Semantic</h3>
+              <div className="text-3xl font-bold text-gray-900">
+                {project.semanticScore || '-'}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">セマンティック</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* タブナビゲーション */}
+      <div className="mb-6">
+        <nav className="flex gap-6 border-b overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+              activeTab === 'overview'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            📊 概要
+          </button>
+          <button
+            onClick={() => setActiveTab('violations')}
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+              activeTab === 'violations'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            ⚠️ 違反
+            {analysisResult && (
+              <span className="ml-2 px-2 py-0.5 text-xs bg-red-100 text-red-800 rounded-full">
+                {analysisResult.violations.critical + analysisResult.violations.major + analysisResult.violations.minor}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('predictions')}
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+              activeTab === 'predictions'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            🔮 崩壊予測
+            {predictions.length > 0 && (
+              <span className="ml-2 px-2 py-0.5 text-xs bg-purple-100 text-purple-800 rounded-full">
+                {predictions.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('suggestions')}
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+              activeTab === 'suggestions'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            💡 改善提案
+            {suggestions.length > 0 && (
+              <span className="ml-2 px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded-full">
+                {suggestions.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('generator')}
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+              activeTab === 'generator'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            🎨 生成
+          </button>
+        </nav>
+      </div>
+
+      {/* タブコンテンツ */}
+      <div className="bg-white rounded-lg border p-6 shadow-sm min-h-[400px]">
+        {isLoadingTab ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <div className="animate-spin text-4xl mb-4">⏳</div>
+              <p className="text-gray-600">読み込み中...</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Overview タブ */}
+            {activeTab === 'overview' && (
+              <div>
+                <h2 className="text-2xl font-bold mb-6">診断サマリー</h2>
+                
+                {analysisResult ? (
+                  <div className="space-y-6">
+                    {/* 解析情報 */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <p className="text-sm text-gray-600 mb-1">解析フレーム数</p>
+                        <p className="text-2xl font-bold text-gray-900">{analysisResult.totalFrames}</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <p className="text-sm text-gray-600 mb-1">HTML生成</p>
+                        <p className="text-2xl font-bold">
+                          {analysisResult.canGenerateHTML ? '✅ 可能' : '⚠️ 要改善'}
+                        </p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <p className="text-sm text-gray-600 mb-1">Grid変換</p>
+                        <p className="text-2xl font-bold">
+                          {analysisResult.canUseGrid ? '✅ 可能' : '❌ 不可'}
                         </p>
                       </div>
                     </div>
 
-                    {/* 説明 */}
-                    <div className="mb-4">
-                      <p className="text-sm text-gray-700">{violation.description}</p>
-                      {violation.impact && (
-                        <p className="text-sm text-gray-600 mt-2">
-                          <span className="font-medium">影響:</span> {violation.impact}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* 提案 */}
-                    {violation.suggestion && (
-                      <div className="bg-indigo-50 rounded-lg p-4 mb-4">
-                        <p className="text-sm font-medium text-indigo-900 mb-1">💡 推奨</p>
-                        <p className="text-sm text-indigo-800">{violation.suggestion}</p>
-                      </div>
-                    )}
-
-                    {/* アクション */}
-                    <div className="flex items-center gap-4">
-                      {!violation.commentPosted && violation.frameId && (
-                        <button
-                          onClick={() => handleSingleCommentPost(violation.id)}
-                          className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors"
-                        >
-                          💬 Figmaにコメント投稿
-                        </button>
-                      )}
-                      {violation.commentPosted && violation.figmaCommentId && (
-                        <a
-                          href={`https://www.figma.com/file/${project.figmaFileKey}?node-id=${violation.frameId}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-4 py-2 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors"
-                        >
-                          🔗 Figmaで確認
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-20 text-gray-500">
-                ルール違反はありません
-              </div>
-            )}
-
-            {/* ページネーション */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 mt-8">
-                <button
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className={`px-4 py-2 rounded-lg ${
-                    currentPage === 1
-                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  ← 前へ
-                </button>
-
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    let pageNum;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
-                    }
-
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => handlePageChange(pageNum)}
-                        className={`px-4 py-2 rounded-lg ${
-                          currentPage === pageNum
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <button
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className={`px-4 py-2 rounded-lg ${
-                    currentPage === totalPages
-                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  次へ →
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 崩壊予測タブ */}
-        {activeTab === 'predictions' && (
-          <div className="space-y-6">
-            {predictionsLoading ? (
-              <div className="text-center py-20">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                <p className="text-gray-600">読み込み中...</p>
-              </div>
-            ) : predictions.length > 0 ? (
-              <div className="space-y-4">
-                {predictions.map((prediction) => (
-                  <div key={prediction.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            prediction.severity === 'CRITICAL' ? 'bg-red-100 text-red-800' :
-                            prediction.severity === 'MAJOR' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-blue-100 text-blue-800'
-                          }`}>
-                            {prediction.severity === 'CRITICAL' ? '🔴 高リスク' :
-                            prediction.severity === 'MAJOR' ? '🟡 中リスク' : '🔵 低リスク'}
-                          </span>
+                    {/* 違反統計 */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3">ルール違反統計</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                          <p className="text-sm text-red-800 mb-1">🔴 重大</p>
+                          <p className="text-3xl font-bold text-red-600">
+                            {analysisResult.violations.critical}
+                          </p>
                         </div>
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {prediction.affectedFrame}
-                        </h3>
-                      </div>
-                    </div>
-                      <p className="text-sm text-gray-700 mb-2">{prediction.breakDescription}</p>
-                      {prediction.fixSuggestion && (
-                        <div className="bg-yellow-50 rounded-lg p-4">
-                          <p className="text-sm font-medium text-yellow-900 mb-1">💡 推奨対策</p>
-                          <p className="text-sm text-yellow-800">{prediction.fixSuggestion}</p>
+                        <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                          <p className="text-sm text-yellow-800 mb-1">🟡 警告</p>
+                          <p className="text-3xl font-bold text-yellow-600">
+                            {analysisResult.violations.major}
+                          </p>
                         </div>
-                      )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-20 text-gray-500">
-                崩壊予測データはありません
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 改善提案タブ */}
-        {activeTab === 'suggestions' && (
-          <div className="space-y-6">
-            {suggestionsLoading ? (
-              <div className="text-center py-20">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                <p className="text-gray-600">読み込み中...</p>
-              </div>
-            ) : suggestions.length > 0 ? (
-              <div className="space-y-4">
-                {suggestions.map((suggestion, index) => (
-                  <div key={suggestion.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center w-8 h-8 bg-indigo-600 text-white rounded-full font-bold text-sm">
-                          {index + 1}
-                        </span>
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            {suggestion.title}
-                          </h3>
-                          <p className="text-sm text-gray-600">
-                            スコア改善: +{suggestion.scoreImprovement}点 | 
-                            所要時間: {suggestion.estimatedTime} | 
-                            難易度: {suggestion.difficulty}
+                        <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                          <p className="text-sm text-blue-800 mb-1">🔵 軽微</p>
+                          <p className="text-3xl font-bold text-blue-600">
+                            {analysisResult.violations.minor}
                           </p>
                         </div>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-700 mb-4">{suggestion.description}</p>
-                    {suggestion.actionSteps && (
-                      <div className="bg-blue-50 rounded-lg p-4">
-                        <p className="text-sm font-medium text-blue-900 mb-2">🛠️ 実施手順</p>
-                        <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-                          {(suggestion.actionSteps as any[] || []).map((step: string, i: number) => (
-                            <li key={i}>{step}</li>
-                          ))}
-                        </ol>
-                      </div>
-                    )}
+
+                    {/* 次のステップ */}
+                    <div className="bg-indigo-50 rounded-lg p-6 border border-indigo-200">
+                      <h3 className="text-lg font-semibold text-indigo-900 mb-3">
+                        💡 次のステップ
+                      </h3>
+                      <ul className="space-y-2 text-sm text-indigo-800">
+                        <li>• 違反タブで詳細なルール違反を確認</li>
+                        <li>• 崩壊予測タブで崩れリスクを把握</li>
+                        <li>• 改善提案タブで改善提案を確認</li>
+                        {analysisResult.canGenerateHTML && (
+                          <li>• 生成タブで実際のHTMLコードを生成</li>
+                        )}
+                      </ul>
+                    </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-20 text-gray-500">
-                改善提案データはありません
+                ) : (
+                  <div className="text-center py-20 text-gray-500">
+                    <p className="text-lg mb-2">解析結果がまだありません</p>
+                    <p className="text-sm">プロジェクトの解析を実行してください</p>
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
 
-        {/* 生成タブ */}
-        {activeTab === 'generate' && (
-          <div className="text-center py-20 text-gray-500">
-            コード生成機能は開発中です
-          </div>
+            {/* Violations タブ */}
+            {activeTab === 'violations' && (
+              <div className="space-y-6">
+
+                {/* フィルター・ページング */}
+                <div className="bg-white rounded-lg border p-4">
+                  <div className="flex flex-wrap items-end justify-between gap-4">
+
+                    <div className="flex flex-wrap gap-4">
+                      {/* 重要度 */}
+                      <div>
+                        <label className="block text-sm font-medium mb-1">重要度</label>
+                        <select
+                          value={severityFilter}
+                          onChange={(e) => {
+                            setSeverityFilter(e.target.value as any);
+                            setCurrentPage(1);
+                          }}
+                          className="border rounded-lg px-3 py-2"
+                        >
+                          <option value="ALL">すべて</option>
+                          <option value="CRITICAL">🔴 重大</option>
+                          <option value="MAJOR">🟡 警告</option>
+                          <option value="MINOR">🔵 軽微</option>
+                        </select>
+                      </div>
+
+                      {/* コメント */}
+                      <div>
+                        <label className="block text-sm font-medium mb-1">コメント投稿</label>
+                        <select
+                          value={commentPostedFilter}
+                          onChange={(e) => {
+                            setCommentPostedFilter(e.target.value as any);
+                            setCurrentPage(1);
+                          }}
+                          className="border rounded-lg px-3 py-2"
+                        >
+                          <option value="ALL">すべて</option>
+                          <option value="NOT_POSTED">未投稿のみ</option>
+                          <option value="POSTED">投稿済みのみ</option>
+                        </select>
+                      </div>
+
+                      {/* 表示件数 */}
+                      <div>
+                        <label className="block text-sm font-medium mb-1">表示件数</label>
+                        <select
+                          value={itemsPerPage}
+                          onChange={(e) => {
+                            const value = Number(e.target.value);
+                            setItemsPerPage(value);
+                            setCurrentPage(1);
+                          }}
+                          className="border rounded-lg px-3 py-2"
+                        >
+                          <option value={5}>5件</option>
+                          <option value={20}>20件</option>
+                          <option value={30}>30件</option>
+                          <option value={50}>50件</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* 表示情報 */}
+                    <div className="text-sm text-gray-600">
+                      全 {violationsTotal} 件中{' '}
+                      {filteredViolations.length > 0 
+                        ? `${Math.min((currentPage - 1) * itemsPerPage + 1, filteredViolations.length)} – ${Math.min(currentPage * itemsPerPage, filteredViolations.length)}`
+                        : '0'
+                      } 件を表示
+                    </div>
+                  </div>
+                </div>
+
+                {/* ヘッダー */}
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold">ルール違反一覧</h2>
+
+                  <button
+                    onClick={handleBulkPostComments}
+                    disabled={isBulkPosting || violations.length === 0}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                  >
+                    {isBulkPosting ? '投稿中...' : '💬 Figmaに一括投稿'}
+                  </button>
+                </div>
+
+                {/* 一覧 */}
+                {paginatedViolations.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-4">
+                    {paginatedViolations.map(v => (
+                      <ViolationCard
+                        key={v.id}
+                        violation={v}
+                        projectId={projectId}
+                        project={project}
+                        onCommentPosted={loadTabData}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-20 text-gray-500">
+                    条件に一致する違反はありません
+                  </div>
+                )}
+
+                {/* モダンなページネーション */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 mt-8">
+                    {/* 最初へ */}
+                    <button
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                      className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-1 text-sm font-medium"
+                      title="最初のページ"
+                    >
+                      <span className="text-gray-600">⏮</span>
+                    </button>
+
+                    {/* 前へ */}
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="px-4 py-2 rounded-lg border bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 text-sm font-medium"
+                    >
+                      ← 前へ
+                    </button>
+
+                    {/* ページ番号 */}
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter(page => {
+                          // 現在のページ周辺のみ表示
+                          if (page === 1 || page === totalPages) return true;
+                          if (Math.abs(page - currentPage) <= 1) return true;
+                          return false;
+                        })
+                        .map((page, index, array) => {
+                          // 省略記号の挿入
+                          const prevPage = array[index - 1];
+                          const showEllipsis = prevPage && page - prevPage > 1;
+
+                          return (
+                            <div key={page} className="flex items-center gap-1">
+                              {showEllipsis && (
+                                <span className="px-2 text-gray-400">...</span>
+                              )}
+                              <button
+                                onClick={() => setCurrentPage(page)}
+                                className={`min-w-[40px] h-[40px] rounded-lg border transition-all duration-200 text-sm font-medium ${
+                                  page === currentPage
+                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+                                    : 'bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            </div>
+                          );
+                        })}
+                    </div>
+
+                    {/* 次へ */}
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="px-4 py-2 rounded-lg border bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 text-sm font-medium"
+                    >
+                      次へ →
+                    </button>
+
+                    {/* 最後へ */}
+                    <button
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-1 text-sm font-medium"
+                      title="最後のページ"
+                    >
+                      <span className="text-gray-600">⏭</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Predictions タブ */}
+            {activeTab === 'predictions' && (
+              <div>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold">崩壊予測</h2>
+                  {predictions.length > 0 && (
+                    <p className="text-sm text-gray-600">
+                      全 {predictions.length} 件
+                    </p>
+                  )}
+                </div>
+
+                {predictions.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-4">
+                    {predictions.map((prediction) => (
+                      <PredictionCard key={prediction.id} prediction={prediction} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-20 text-gray-500">
+                    <p className="text-lg mb-2">✅ 崩壊予測はありません</p>
+                    <p className="text-sm">レスポンシブ対応が適切です!</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Suggestions タブ */}
+            {activeTab === 'suggestions' && (
+              <div>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold">改善提案</h2>
+                  {suggestions.length > 0 && (
+                    <p className="text-sm text-gray-600">
+                      全 {suggestions.length} 件
+                    </p>
+                  )}
+                </div>
+
+                {suggestions.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-4">
+                    {suggestions.map((suggestion) => (
+                      <SuggestionCard key={suggestion.id} suggestion={suggestion} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-20 text-gray-500">
+                    <p className="text-lg mb-2">✅ 改善提案はありません</p>
+                    <p className="text-sm">最高レベルのデザイン品質です!</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Generator タブ */}
+            {activeTab === 'generator' && <GeneratorTab project={project} />}
+          </>
         )}
       </div>
     </div>

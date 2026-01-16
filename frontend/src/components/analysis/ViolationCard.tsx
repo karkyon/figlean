@@ -1,233 +1,183 @@
 /**
- * FIGLEAN Frontend - ルール違反カードコンポーネント（修正版）
+ * FIGLEAN Frontend - ルール違反カードコンポーネント
  * ファイルパス: frontend/src/components/analysis/ViolationCard.tsx
  * 
  * 機能:
- * - ルール違反の詳細を視覚的に表示
- * - 重要度別の色分け（CRITICAL/MAJOR/MINOR）
- * - 影響範囲と改善提案の表示
+ * - ルール違反の詳細表示
+ * - 影響範囲・改善提案の表示
  * - Figmaコメント投稿機能
+ * - Figmaコメント確認リンク（投稿済みの場合）
  * 
- * 作成日: 2026年1月14日
- * 更新日: 2026年1月15日 - Figmaコメント投稿ボタン追加
- * 依存関係: @/types/models, @/lib/api/figma
+ * 作成日: 2026年1月13日
+ * 更新日: 2026年1月16日 - Figmaコメント確認ボタン追加
+ * 依存関係: @/types/models, @/lib/api/client
  */
 
 'use client';
 
-import React, { useState } from 'react';
-import { Violation, ViolationSeverity } from '@/types/models';
-import * as figmaApi from '@/lib/api/figma';
-
-// =====================================
-// 型定義
-// =====================================
+import { useState } from 'react';
+import { Violation, Project } from '@/types/models';
+import apiClient from '@/lib/api/client';
+import { logger } from '@/lib/logger';
 
 interface ViolationCardProps {
   violation: Violation;
   projectId: string;
+  project: Project;
   onCommentPosted?: () => void;
 }
 
-// =====================================
-// ヘルパー関数
-// =====================================
+export function ViolationCard({ violation, projectId, onCommentPosted }: ViolationCardProps) {
+  const [isPosting, setIsPosting] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
-const getSeverityColor = (severity: ViolationSeverity): string => {
-  switch (severity) {
-    case ViolationSeverity.CRITICAL:
-      return 'bg-red-50 border-red-200';
-    case ViolationSeverity.MAJOR:
-      return 'bg-yellow-50 border-yellow-200';
-    case ViolationSeverity.MINOR:
-      return 'bg-blue-50 border-blue-200';
-    default:
-      return 'bg-gray-50 border-gray-200';
-  }
-};
-
-const getSeverityBadgeColor = (severity: ViolationSeverity): string => {
-  switch (severity) {
-    case ViolationSeverity.CRITICAL:
-      return 'bg-red-100 text-red-800';
-    case ViolationSeverity.MAJOR:
-      return 'bg-yellow-100 text-yellow-800';
-    case ViolationSeverity.MINOR:
-      return 'bg-blue-100 text-blue-800';
-    default:
-      return 'bg-gray-100 text-gray-800';
-  }
-};
-
-const getSeverityLabel = (severity: ViolationSeverity): string => {
-  switch (severity) {
-    case ViolationSeverity.CRITICAL:
-      return '重大';
-    case ViolationSeverity.MAJOR:
-      return '警告';
-    case ViolationSeverity.MINOR:
-      return '軽微';
-    default:
-      return String(severity);
-  }
-};
-
-const getSeverityIcon = (severity: ViolationSeverity): string => {
-  switch (severity) {
-    case ViolationSeverity.CRITICAL:
-      return '🔴';
-    case ViolationSeverity.MAJOR:
-      return '🟡';
-    case ViolationSeverity.MINOR:
-      return '🔵';
-    default:
-      return '⚪';
-  }
-};
-
-// =====================================
-// メインコンポーネント
-// =====================================
-
-export const ViolationCard: React.FC<ViolationCardProps> = ({ 
-  violation,
-  projectId,
-  onCommentPosted
-}) => {
-  const [isPostingComment, setIsPostingComment] = useState(false);
-  const [commentPosted, setCommentPosted] = useState(violation.commentPosted || false);
-
-  // Figmaコメント投稿
   const handlePostComment = async () => {
     try {
-      setIsPostingComment(true);
+      setIsPosting(true);
+      logger.info('Figmaコメント投稿開始', { violationId: violation.id });
 
-      // コメントメッセージ生成
-      const message = generateCommentMessage(violation);
+      await apiClient.post(`/figma/comments/${projectId}/violations/${violation.id}`, {
+        includeFixSteps: true,
+        includeDetectedValue: true,
+        language: 'ja'
+      });
 
-      // Figmaコメント投稿API呼び出し
-      await figmaApi.postFigmaComment(projectId, violation.id);
+      alert('Figmaにコメントを投稿しました');
+      logger.success('Figmaコメント投稿成功', { violationId: violation.id });
 
-      setCommentPosted(true);
-      
       if (onCommentPosted) {
         onCommentPosted();
       }
     } catch (error: any) {
       console.error('Figmaコメント投稿エラー:', error);
-      alert('コメントの投稿に失敗しました');
+      alert('コメント投稿に失敗しました');
+      logger.error('Figmaコメント投稿失敗', error, { violationId: violation.id });
     } finally {
-      setIsPostingComment(false);
+      setIsPosting(false);
     }
   };
 
-  // コメントメッセージ生成
-  const generateCommentMessage = (v: Violation): string => {
-    const emoji = getSeverityIcon(v.severity);
-    const priority = getSeverityLabel(v.severity);
-    
-    let message = `${emoji} **[${priority}]** ${v.ruleName}\n\n`;
-    message += `**問題**: ${v.description}\n\n`;
-    
-    if (v.impact) {
-      message += `**影響範囲**: ${v.impact}\n\n`;
-    }
-    
-    if (v.suggestion) {
-      message += `**改善提案**: ${v.suggestion}\n\n`;
-    }
-    
-    message += `---\n`;
-    message += `🔍 **FIGLEAN診断**\n`;
-    message += `ルールID: \`${v.ruleId}\``;
-    
-    return message;
-  };
+  const severityColor = {
+    CRITICAL: 'border-red-300 bg-red-50',
+    MAJOR: 'border-yellow-300 bg-yellow-50',
+    MINOR: 'border-blue-300 bg-blue-50'
+  }[violation.severity];
+
+  const severityLabel = {
+    CRITICAL: '🔴 重大',
+    MAJOR: '🟡 警告',
+    MINOR: '🔵 軽微'
+  }[violation.severity];
 
   return (
-    <div
-      className={`border rounded-lg p-4 ${getSeverityColor(violation.severity)} hover:shadow-md transition-shadow`}
-    >
+    <div className={`border-l-4 rounded-lg p-4 ${severityColor}`}>
       {/* ヘッダー */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-lg">{getSeverityIcon(violation.severity)}</span>
-            <h3 className="font-semibold text-gray-900">{violation.ruleName}</h3>
-          </div>
-          <p className="text-sm text-gray-600">
-            フレーム: <span className="font-medium">{violation.frameName}</span>
-          </p>
-        </div>
-        
-        <div className="flex flex-col items-end gap-2">
-          <span
-            className={`px-3 py-1 text-xs font-medium rounded-full ${getSeverityBadgeColor(
-              violation.severity
-            )}`}
-          >
-            {getSeverityLabel(violation.severity)}
-          </span>
-          
-          {commentPosted && (
-            <span className="text-xs text-green-600 flex items-center gap-1">
-              ✓ Figmaコメント投稿済み
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-sm font-semibold">{severityLabel}</span>
+            <span className="text-xs px-2 py-0.5 bg-white rounded border">
+              {violation.category}
             </span>
-          )}
-        </div>
-      </div>
-
-      {/* 説明 */}
-      <div className="mb-3">
-        <p className="text-sm text-gray-700 leading-relaxed">{violation.description}</p>
-      </div>
-
-      {/* カテゴリー */}
-      <div className="mb-3">
-        <span className="inline-block px-2 py-1 text-xs bg-white border border-gray-300 rounded text-gray-700">
-          📂 {violation.ruleCategory}
-        </span>
-      </div>
-
-      {/* 影響範囲 */}
-      {violation.impact && (
-        <div className="mb-3 p-3 bg-white rounded border border-gray-200">
-          <p className="text-xs font-medium text-gray-700 mb-1">💥 影響範囲:</p>
-          <p className="text-sm text-gray-600">{violation.impact}</p>
-        </div>
-      )}
-
-      {/* 改善提案 */}
-      {violation.suggestion && (
-        <div className="mb-3 p-3 bg-white rounded border border-gray-200">
-          <p className="text-xs font-medium text-gray-700 mb-1">💡 改善提案:</p>
-          <p className="text-sm text-gray-600">{violation.suggestion}</p>
-        </div>
-      )}
-
-      {/* Figmaコメント投稿ボタン */}
-      {!commentPosted && (
-        <div className="mt-3 pt-3 border-t border-gray-300">
-          <button
-            onClick={handlePostComment}
-            disabled={isPostingComment}
-            className="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium flex items-center justify-center gap-2"
-          >
-            {isPostingComment ? (
-              <>
-                <span className="animate-spin">⏳</span>
-                投稿中...
-              </>
-            ) : (
-              <>
-                💬 Figmaにコメント投稿
-              </>
+            {violation.commentPosted && (
+              <span className="text-xs px-2 py-0.5 bg-green-100 text-green-800 rounded border border-green-300">
+                ✓ Figmaコメント投稿済み
+              </span>
             )}
+          </div>
+          <h3 className="text-lg font-bold text-gray-900">{violation.ruleName}</h3>
+          <p className="text-sm text-gray-700 mt-1">{violation.description}</p>
+        </div>
+
+        {/* アクションボタン */}
+        <div className="flex gap-2 ml-4 flex-shrink-0">
+          {/* Figmaコメント確認ボタン（投稿済みの場合のみ） */}
+          {violation.commentPosted && (
+            <a
+              href={`https://www.figma.com/file/${violation.figmaFileKey || project?.figmaFileKey}?node-id=${violation.figmaNodeId || violation.frameId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1 whitespace-nowrap"
+              title="Figmaでコメントを確認"
+            >
+              <span>👁</span>
+              <span>Figmaで確認</span>
+            </a>
+          )}
+
+          {/* Figmaコメント投稿ボタン（未投稿の場合のみ） */}
+          {!violation.commentPosted && (
+            <button
+              onClick={handlePostComment}
+              disabled={isPosting}
+              className="px-3 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {isPosting ? '投稿中...' : '💬 Figmaに投稿'}
+            </button>
+          )}
+
+          {/* 詳細展開ボタン */}
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="px-3 py-2 bg-white border rounded-lg text-sm hover:bg-gray-50 transition-colors whitespace-nowrap"
+          >
+            {isExpanded ? '▲ 閉じる' : '▼ 詳細'}
           </button>
+        </div>
+      </div>
+
+      {/* 展開コンテンツ */}
+      {isExpanded && (
+        <div className="mt-4 space-y-4 border-t pt-4">
+          {/* フレーム情報 */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700 mb-1">📍 対象フレーム</h4>
+            <p className="text-sm text-gray-600">{violation.frameName}</p>
+            {violation.figmaNodeId && (
+              <a
+                href={`https://www.figma.com/file/${violation.figmaFileKey}?node-id=${violation.figmaNodeId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1 mt-1"
+              >
+                🔗 Figmaで開く
+              </a>
+            )}
+          </div>
+
+          {/* 検出値 */}
+          {violation.detectedValue && (
+            <div>
+              <h4 className="text-sm font-semibold text-gray-700 mb-1">🔍 検出値</h4>
+              <p className="text-sm text-gray-600">{violation.detectedValue}</p>
+            </div>
+          )}
+
+          {/* 影響範囲 */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700 mb-1">⚠️ 影響範囲</h4>
+            <p className="text-sm text-gray-600">{violation.impact}</p>
+          </div>
+
+          {/* 改善提案 */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-700 mb-1">💡 改善提案</h4>
+            <p className="text-sm text-gray-600">{violation.suggestion}</p>
+          </div>
+
+          {/* 修正手順 */}
+          {violation.fixSteps && violation.fixSteps.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-gray-700 mb-1">🔧 修正手順</h4>
+              <ol className="list-decimal list-inside text-sm text-gray-600 space-y-1">
+                {violation.fixSteps.map((step, index) => (
+                  <li key={index}>{step}</li>
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
-};
-
-export default ViolationCard;
+}

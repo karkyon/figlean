@@ -156,12 +156,15 @@ export interface Violation {
   ruleName: string;
   ruleCategory: RuleCategory | string;
   severity: ViolationSeverity;
+  category: string;  // 追加 2026年1月14日
   description: string;
   impact: string | null;
   suggestion: string | null;
-  fixSteps: any | null;
   detectedValue: string | null;
   expectedValue: string | null;
+  fixSteps?: string[];  // 追加 2026年1月14日
+  figmaFileKey?: string;  // 追加 2026年1月14日
+  figmaNodeId?: string;  // 追加 2026年1月14日
   commentPosted: boolean;
   figmaCommentId: string | null;
   createdAt: string;

@@ -17,9 +17,11 @@
 // =====================================
 
 import { Request, Response, NextFunction } from 'express';
-import prisma from '../lib/prisma';
+import { PrismaClient } from '@prisma/client';
 import logger from '../utils/logger';
-import { ValidationError, NotFoundError } from '../errors';
+import { ValidationError } from '../errors';
+
+const prisma = new PrismaClient();
 
 // =====================================
 // GET /api/analysis/:projectId
@@ -49,8 +51,8 @@ export async function getAnalysisSummary(
       throw new ValidationError('プロジェクトが見つかりません');
     }
 
-    // 診断結果取得
-    const analysis = await prisma.analysisResult.findUnique({
+    // 診断結果取得（findFirst に変更）
+    const analysis = await prisma.analysisResult.findFirst({
       where: { projectId }
     });
 
@@ -71,16 +73,16 @@ export async function getAnalysisSummary(
     });
 
     const violations = {
-      critical: violationStats.find(v => v.severity === 'CRITICAL')?._count.severity || 0,
-      major: violationStats.find(v => v.severity === 'MAJOR')?._count.severity || 0,
-      minor: violationStats.find(v => v.severity === 'MINOR')?._count.severity || 0
+      critical: violationStats.find((v: any) => v.severity === 'CRITICAL')?._count.severity || 0,
+      major: violationStats.find((v: any) => v.severity === 'MAJOR')?._count.severity || 0,
+      minor: violationStats.find((v: any) => v.severity === 'MINOR')?._count.severity || 0
     };
 
     // フレーム総数
     const totalFrames = await prisma.ruleViolation.groupBy({
       by: ['frameId'],
       where: { projectId }
-    }).then(frames => frames.length);
+    }).then((frames: any) => frames.length);
 
     logger.info('✅ [CONTROLLER] 診断サマリー取得成功', {
       projectId,
@@ -91,11 +93,11 @@ export async function getAnalysisSummary(
       success: true,
       data: {
         figleanScore: analysis.figleanScore,
-        canGenerateHTML: analysis.canGenerateHTML,
-        canUseGrid: analysis.canUseGrid,
+        canGenerateHTML: analysis.htmlGeneratable,
+        canUseGrid: analysis.figleanScore === 100,  // 100点の場合のみGrid可能
         violations,
         totalFrames,
-        analyzedAt: analysis.analyzedAt
+        analyzedAt: analysis.createdAt
       }
     });
   } catch (error) {
@@ -140,7 +142,7 @@ export async function getViolations(
     }
 
     // ページングパラメータ
-    const limitNum = Math.min(parseInt(limit as string) || 20, 100);
+    const limitNum = Math.min(parseInt(limit as string) || 50, 100);
     const offsetNum = parseInt(offset as string) || 0;
 
     // フィルター条件構築
@@ -226,12 +228,12 @@ export async function getPredictions(
       throw new ValidationError('プロジェクトが見つかりません');
     }
 
-    // 崩壊予測取得
-    const predictions = await prisma.collapseRisk.findMany({
+    // 崩壊予測取得（テーブル名とカラム名を修正）
+    const predictions = await prisma.breakPrediction.findMany({
       where: { projectId },
       orderBy: [
-        { riskLevel: 'desc' },  // HIGH → MEDIUM → LOW
-        { frameName: 'asc' }
+        { severity: 'desc' },  // CRITICAL → MAJOR → MINOR
+        { affectedFrame: 'asc' }
       ]
     });
 
