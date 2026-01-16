@@ -36,11 +36,22 @@ export function ViolationCard({ violation, projectId, project, onCommentPosted }
       setIsPosting(true);
       logger.info('Figmaコメント投稿開始', { violationId: violation.id });
 
-      await apiClient.post(`/figma/comments/${projectId}/violations/${violation.id}`, {
+      const response = await apiClient.post(`/figma/comments/${projectId}/${violation.id}`, {
         includeFixSteps: true,
         includeDetectedValue: true,
         language: 'ja'
       });
+
+      // ★★★ 修正箇所：レスポンスのsuccessをチェック ★★★
+      if (!response.data.success) {
+        const errorMessage = response.data.error?.message || 'コメント投稿に失敗しました';
+        alert(errorMessage);
+        logger.error('Figmaコメント投稿失敗', null, { 
+          violationId: violation.id,
+          error: response.data.error 
+        });
+        return;
+      }
 
       alert('Figmaにコメントを投稿しました');
       logger.success('Figmaコメント投稿成功', { violationId: violation.id });
@@ -50,7 +61,8 @@ export function ViolationCard({ violation, projectId, project, onCommentPosted }
       }
     } catch (error: any) {
       console.error('Figmaコメント投稿エラー:', error);
-      alert('コメント投稿に失敗しました');
+      const errorMessage = error.response?.data?.error?.message || 'コメント投稿に失敗しました';
+      alert(errorMessage);
       logger.error('Figmaコメント投稿失敗', error, { violationId: violation.id });
     } finally {
       setIsPosting(false);

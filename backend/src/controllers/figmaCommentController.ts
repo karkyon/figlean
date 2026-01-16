@@ -49,6 +49,34 @@ export async function postCommentToViolation(
       options
     );
 
+    // ★★★ 修正箇所：投稿失敗時はエラーを返す ★★★
+    if (!result.success) {
+      logger.error('ルール違反コメント投稿失敗', {
+        userId,
+        projectId,
+        violationId,
+        error: result.error
+      });
+
+      // result.errorがstring型の場合とオブジェクト型の場合を考慮
+      const errorMessage = typeof result.error === 'string' 
+        ? result.error 
+        : (result.error as any)?.message || 'コメント投稿に失敗しました';
+
+      const errorCode = typeof result.error === 'object' && result.error !== null
+        ? (result.error as any)?.code || 'COMMENT_POST_FAILED'
+        : 'COMMENT_POST_FAILED';
+
+      res.status(400).json({
+        success: false,
+        error: {
+          code: errorCode,
+          message: errorMessage
+        }
+      });
+      return;
+    }
+
     logger.info('ルール違反コメント投稿API成功', {
       userId,
       projectId,
