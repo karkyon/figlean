@@ -12,7 +12,8 @@ import {
   getAnalysisSummary, 
   getViolations, 
   getPredictions, 
-  getSuggestions 
+  getSuggestions,
+  reanalyzeProject
 } from '../controllers/analysisController';
 import { authenticateToken } from '../middlewares/authenticate';
 import logger from '../utils/logger';
@@ -484,6 +485,80 @@ router.get(
 );
 
 // =====================================
+// Phase 9: 再解析エンドポイント
+// =====================================
+/**
+ * @swagger
+ * /api/analysis/{projectId}/reanalyze:
+ *   post:
+ *     summary: プロジェクト再解析実行
+ *     description: Figmaデータを再取得してFIGLEAN適合度スコアを再計算
+ *     tags:
+ *       - 🔍 診断 (Analysis)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: プロジェクトID
+ *     responses:
+ *       200:
+ *         description: 再解析成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "再解析が完了しました"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     figleanScore:
+ *                       type: integer
+ *                       example: 87
+ *                     analyzedAt:
+ *                       type: string
+ *                       format: date-time
+ *       401:
+ *         description: 認証エラー
+ *       404:
+ *         description: プロジェクトが見つかりません
+ *       500:
+ *         description: サーバーエラー
+ */
+router.post(
+  '/:projectId/reanalyze',
+  (req: Request, _res: Response, next: NextFunction) => {
+    logger.info('🟢 [ROUTE] /:projectId/reanalyze - リクエスト受信', { 
+      projectId: req.params.projectId,
+      method: req.method,
+      url: req.url,
+      timestamp: new Date().toISOString()
+    });
+    next();
+  },
+  authenticateToken(),
+  (req: Request, _res: Response, next: NextFunction) => {
+    logger.info('🟢 [ROUTE] /:projectId/reanalyze - 認証通過後', { 
+      projectId: req.params.projectId,
+      userId: (req as any).user?.userId,
+      timestamp: new Date().toISOString()
+    });
+    next();
+  },
+  reanalyzeProject
+);
+
+// =====================================
 // Export
 // =====================================
 
@@ -492,7 +567,8 @@ logger.info('📊 Analysis エンドポイント登録完了:', {
     'GET  /api/analysis/:projectId',
     'GET  /api/analysis/:projectId/violations',
     'GET  /api/analysis/:projectId/predictions',
-    'GET  /api/analysis/:projectId/suggestions'
+    'GET  /api/analysis/:projectId/suggestions',
+    'POST /api/analysis/:projectId/reanalyze'
   ]
 });
 
