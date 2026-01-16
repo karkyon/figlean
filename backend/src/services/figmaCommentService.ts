@@ -1,12 +1,14 @@
 // =====================================
 // ファイルパス: backend/src/services/figmaCommentService.ts
-// 概要: Figmaコメント投稿サービス - レート制限対策版（最小限の変更）
+// 概要: Figmaコメント投稿サービス（MVC準拠版）
 // 機能説明:
 //   - Figmaへのコメント投稿（単一/一括）
-//   - レート制限エラー時の自動リトライ（新規追加）
-//   - 投稿間隔の最適化（500ms → 1000ms）
+//   - レート制限エラー時の自動リトライ
+//   - バリデーション、オプション構築、エラー処理の統一管理
+//   - 投稿済みコメント管理（取得/削除/リセット）
 // 作成日: 2026-01-12
 // 更新日: 2026-01-16 - レート制限対策強化、投稿間隔延長
+//         2026-01-16 - MVC/三層アーキテクチャ準拠に修正
 // 依存関係:
 //   - @prisma/client
 //   - ../services/figmaTokenService
@@ -100,7 +102,7 @@ export interface CommentMessageOptions {
 }
 
 // =====================================
-// 絵文字アイコン定義
+// 定数定義
 // =====================================
 
 const SEVERITY_ICONS = {
@@ -117,6 +119,72 @@ const CATEGORY_ICONS = {
   CONSTRAINT: '📏',
   STRUCTURE: '🏗️'
 } as const;
+
+const RETRY_CONFIG = {
+  MAX_RETRIES: 3,
+  INITIAL_DELAY: 2000,
+  MAX_DELAY: 10000,
+  BACKOFF_MULTIPLIER: 2
+};
+
+const RATE_LIMIT_CONFIG = {
+  BULK_INTERVAL_MS: 1000, // 一括投稿時のインターバル（1秒）
+  RATE_LIMIT_CODES: [429, 'RATE_LIMIT', 'TOO_MANY_REQUESTS']
+};
+
+// =====================================
+// オプション構築（内部ヘルパー）
+// =====================================
+
+function buildCommentOptions(options: Partial<CommentMessageOptions> = {}): CommentMessageOptions {
+  return {
+    includeFixSteps: options.includeFixSteps !== undefined ? options.includeFixSteps : true,
+    includeDetectedValue: options.includeDetectedValue !== undefined ? options.includeDetectedValue : true,
+    language: options.language || 'ja'
+  };
+}
+
+// =====================================
+// バリデーション（内部ヘルパー）
+// =====================================
+
+function validateSeverity(severity: string): asserts severity is Severity {
+  const validSeverities: Severity[] = ['CRITICAL', 'MAJOR', 'MINOR'];
+  if (!validSeverities.includes(severity as Severity)) {
+    throw new ValidationError(
+      'minSeverityは CRITICAL, MAJOR, MINOR のいずれかである必要があります'
+    );
+  }
+}
+
+async function validateProjectOwnership(projectId: string, userId: string) {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId, userId }
+  });
+
+  if (!project) {
+    throw new NotFoundError('プロジェクトが見つかりません');
+  }
+
+  return project;
+}
+
+async function validateViolationOwnership(violationId: string, userId: string) {
+  const violation = await prisma.ruleViolation.findUnique({
+    where: { id: violationId },
+    include: { project: true }
+  });
+
+  if (!violation) {
+    throw new NotFoundError('ルール違反が見つかりません');
+  }
+
+  if (violation.project.userId !== userId) {
+    throw new ValidationError('このプロジェクトへのアクセス権限がありません');
+  }
+
+  return violation;
+}
 
 // =====================================
 // コメントメッセージ生成
@@ -192,9 +260,6 @@ export function generateCommentMessage(
   return message;
 }
 
-// =====================================
-// Figma Comment API連携
-// =====================================
 
 /**
  * Figma Comment APIヘッダーを生成
@@ -242,10 +307,6 @@ async function handleFigmaCommentApiError(
     response.status
   );
 }
-
-// =====================================
-// 🆕 リトライ機能付きコメント投稿
-// =====================================
 
 /**
  * Figmaにコメントを投稿（リトライ機能付き）
@@ -362,19 +423,52 @@ async function postCommentToFigmaWithRetry(
   throw lastError || new ExternalServiceError('Figmaコメント投稿に失敗しました');
 }
 
-// =====================================
-// 既存のpostCommentToFigma（互換性のため維持）
-// =====================================
-
-export async function postCommentToFigma(
+/**
+ * Figma APIコメント投稿
+ * 
+ * @param userId - FIGLEANユーザーID
+ * @param fileKey - FigmaファイルKey
+ * @throws ExternalServiceError - Figma APIエラー
+ */
+async function postCommentToFigma(
   userId: string,
   fileKey: string,
-  nodeId: string,
-  message: string
-): Promise<string> {
-  // 内部的にはリトライ機能付きを呼び出す
-  return postCommentToFigmaWithRetry(userId, fileKey, nodeId, message, 3);
+  commentRequest: FigmaCommentRequest
+): Promise<FigmaCommentResponse> {
+  const accessToken = await figmaTokenService.getDecryptedToken(userId);
+
+  if (!accessToken) {
+    throw new ExternalServiceError('Figmaトークンが設定されていません');
+  }
+
+  const url = `${config.figma.apiBaseUrl}/v1/files/${fileKey}/comments`;
+
+  try {
+    const response = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: {
+        'X-Figma-Token': accessToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(commentRequest)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new ExternalServiceError(
+        `Figma API エラー: ${response.status} ${errorData.message || response.statusText}`
+      );
+    }
+
+    return await response.json();
+  } catch (error: any) {
+    logger.error('Figmaコメント投稿エラー', { error, fileKey });
+    throw new ExternalServiceError(
+      error.message || 'Figmaへのコメント投稿に失敗しました'
+    );
+  }
 }
+
 
 /**
  * Figmaからコメントを削除
@@ -390,45 +484,84 @@ export async function deleteCommentFromFigma(
   fileKey: string,
   commentId: string
 ): Promise<void> {
-  logger.info('Figmaコメント削除開始', { userId, fileKey, commentId });
+  logger.info('🗑️ [SERVICE] deleteCommentFromFigma 開始', { userId, fileKey, commentId });
 
-  const token = await figmaTokenService.getFigmaToken(userId);
-  
-  if (!token) {
-    throw new NotFoundError('Figmaトークンが登録されていません');
+  const accessToken = await figmaTokenService.getDecryptedToken(userId);
+
+  if (!accessToken) {
+    throw new ExternalServiceError('Figmaトークンが設定されていません');
   }
 
+  const url = `${config.figma.apiBaseUrl}/v1/files/${fileKey}/comments/${commentId}`;
+
   try {
-    const response = await fetch(
-      `${config.figmaApiBaseUrl}/files/${fileKey}/comments/${commentId}`,
-      {
-        method: 'DELETE',
-        headers: createFigmaCommentHeaders(token)
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'X-Figma-Token': accessToken
       }
-    );
+    });
 
     if (!response.ok) {
-      await handleFigmaCommentApiError(response, 'コメント削除');
+      throw new ExternalServiceError(
+        `Figmaコメント削除エラー: ${response.status}`
+      );
     }
 
-    logger.info('Figmaコメント削除成功', { 
-      userId, 
-      fileKey,
-      commentId
-    });
-  } catch (error) {
-    if (error instanceof ExternalServiceError || error instanceof NotFoundError) {
-      throw error;
-    }
-    
-    logger.error('Figmaコメント削除エラー', { userId, fileKey, commentId, error });
-    throw new ExternalServiceError('Figmaコメント削除に失敗しました');
+    logger.info('✅ [SERVICE] Figmaコメント削除成功', { commentId });
+  } catch (error: any) {
+    logger.error('❌ [SERVICE] Figmaコメント削除失敗', { error, commentId });
+    throw new ExternalServiceError(
+      error.message || 'Figmaコメント削除に失敗しました'
+    );
   }
 }
 
 // =====================================
-// 単一ルール違反へのコメント投稿
+// レート制限対応付きFetch
 // =====================================
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retryCount = 0
+): Promise<Response> {
+  try {
+    const response = await fetch(url, options);
+
+    // レート制限エラー検出
+    if (response.status === 429 && retryCount < RETRY_CONFIG.MAX_RETRIES) {
+      const delay = Math.min(
+        RETRY_CONFIG.INITIAL_DELAY * Math.pow(RETRY_CONFIG.BACKOFF_MULTIPLIER, retryCount),
+        RETRY_CONFIG.MAX_DELAY
+      );
+
+      logger.warn(`レート制限検出、${delay}ms後にリトライします`, {
+        retryCount,
+        url
+      });
+
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return fetchWithRetry(url, options, retryCount + 1);
+    }
+
+    return response;
+  } catch (error) {
+    if (retryCount < RETRY_CONFIG.MAX_RETRIES) {
+      const delay = RETRY_CONFIG.INITIAL_DELAY * Math.pow(RETRY_CONFIG.BACKOFF_MULTIPLIER, retryCount);
+      
+      logger.warn(`ネットワークエラー、${delay}ms後にリトライします`, {
+        retryCount,
+        error
+      });
+
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return fetchWithRetry(url, options, retryCount + 1);
+    }
+
+    throw error;
+  }
+}
 
 /**
  * 単一のルール違反にコメント投稿
@@ -441,52 +574,44 @@ export async function deleteCommentFromFigma(
 export async function postCommentForViolation(
   userId: string,
   violationId: string,
-  options: CommentMessageOptions = {}
+  options: Partial<CommentMessageOptions> = {}
 ): Promise<CommentPostResult> {
-  logger.info('ルール違反コメント投稿開始', { userId, violationId });
+  logger.info('💬 [SERVICE] postCommentForViolation 開始', { userId, violationId });
 
   try {
-    // ルール違反を取得
-    const violation = await prisma.ruleViolation.findUnique({
-      where: { id: violationId },
-      include: {
-        project: true
-      }
-    });
+    // バリデーション
+    const violation = await validateViolationOwnership(violationId, userId);
 
-    if (!violation) {
-      throw new NotFoundError(`ルール違反が見つかりません: ${violationId}`);
-    }
-
-    // プロジェクト所有者チェック
-    if (violation.project.userId !== userId) {
-      throw new ValidationError('このプロジェクトへのアクセス権限がありません');
-    }
-
-    // 既にコメント投稿済みかチェック
-    if (violation.commentPosted && violation.figmaCommentId) {
-      logger.warn('既にコメント投稿済み', { violationId, commentId: violation.figmaCommentId });
+    // 既に投稿済みチェック
+    if (violation.commentPosted) {
+      logger.info('既に投稿済み', { violationId });
       return {
-        success: true,
-        commentId: violation.figmaCommentId,
-        violationId
+        success: false,
+        violationId,
+        error: 'このルール違反には既にコメントが投稿されています'
       };
     }
 
-    // frameIdが必要
-    if (!violation.frameId) {
-      throw new ValidationError('frameIdが設定されていないためコメントを投稿できません');
-    }
+    // オプション構築
+    const commentOptions = buildCommentOptions(options);
 
     // コメントメッセージ生成
-    const message = generateCommentMessage(violation, options);
+    const message = generateCommentMessage(violation, commentOptions);
+
+    // Figma APIリクエスト構築
+    const commentRequest: FigmaCommentRequest = {
+      message,
+      client_meta: {
+        node_id: violation.frameId,
+        node_offset: { x: 0, y: 0 }
+      }
+    };
 
     // Figmaにコメント投稿
-    const commentId = await postCommentToFigma(
+    const result = await postCommentToFigma(
       userId,
       violation.project.figmaFileKey,
-      violation.frameId,
-      message
+      commentRequest
     );
 
     // データベース更新
@@ -494,27 +619,27 @@ export async function postCommentForViolation(
       where: { id: violationId },
       data: {
         commentPosted: true,
-        figmaCommentId: commentId
+        figmaCommentId: result.id
       }
     });
 
-    logger.info('ルール違反コメント投稿成功', { violationId, commentId });
+    logger.info('✅ [SERVICE] コメント投稿成功', { violationId, commentId: result.id });
 
     return {
       success: true,
-      commentId,
+      commentId: result.id,
       violationId
     };
-  } catch (error) {
-    logger.error('ルール違反コメント投稿エラー', { userId, violationId, error });
-
+  } catch (error: any) {
+    logger.error('❌ [SERVICE] コメント投稿失敗', { error, violationId });
     return {
       success: false,
       violationId,
-      error: error instanceof Error ? error.message : '不明なエラー'
+      error: error.message || 'コメント投稿に失敗しました'
     };
   }
 }
+
 
 /**
  * プロジェクト内の全ルール違反に一括コメント投稿
@@ -528,103 +653,53 @@ export async function postCommentForViolation(
 export async function postCommentsForProject(
   userId: string,
   projectId: string,
-  options: CommentMessageOptions = {}
+  options: Partial<CommentMessageOptions> = {}
 ): Promise<BulkCommentPostResult> {
-  logger.info('プロジェクト一括コメント投稿開始', { userId, projectId });
+  logger.info('📝 [SERVICE] postCommentsForProject 開始', { userId, projectId });
 
-  // プロジェクト所有者チェック
-  const project = await prisma.project.findUnique({
-    where: { id: projectId }
-  });
+  // プロジェクト所有権確認
+  await validateProjectOwnership(projectId, userId);
 
-  if (!project) {
-    throw new NotFoundError(`プロジェクトが見つかりません: ${projectId}`);
-  }
+  // オプション構築
+  const commentOptions = buildCommentOptions(options);
 
-  if (project.userId !== userId) {
-    throw new ValidationError('このプロジェクトへのアクセス権限がありません');
-  }
-
-  // 未投稿のルール違反を取得（frameIdがあるもののみ）
+  // 未投稿のルール違反を取得
   const violations = await prisma.ruleViolation.findMany({
     where: {
       projectId,
-      commentPosted: false,
-      frameId: { not: null }
+      commentPosted: false
     },
-    orderBy: [
-      { severity: 'asc' },  // CRITICAL → MAJOR → MINOR
-      { createdAt: 'asc' }
-    ]
+    include: {
+      project: true
+    }
   });
 
-  logger.info('投稿対象ルール違反取得', { 
-    userId, 
-    projectId, 
-    violationCount: violations.length 
-  });
+  logger.info(`対象ルール違反: ${violations.length}件`, { projectId });
 
   const results: CommentPostResult[] = [];
-  let successCount = 0;
-  let failureCount = 0;
 
-  // 各ルール違反にコメント投稿
+  // 一括投稿（レート制限対策でインターバルを設ける）
   for (const violation of violations) {
-    try {
-      // コメントメッセージ生成
-      const message = generateCommentMessage(violation, options);
+    const result = await postCommentForViolation(
+      userId,
+      violation.id,
+      commentOptions
+    );
 
-      // Figmaにコメント投稿
-      const commentId = await postCommentToFigma(
-        userId,
-        project.figmaFileKey,
-        violation.frameId!,
-        message
+    results.push(result);
+
+    // レート制限回避のための待機
+    if (violations.indexOf(violation) < violations.length - 1) {
+      await new Promise(resolve => 
+        setTimeout(resolve, RATE_LIMIT_CONFIG.BULK_INTERVAL_MS)
       );
-
-      // データベース更新
-      await prisma.ruleViolation.update({
-        where: { id: violation.id },
-        data: {
-          commentPosted: true,
-          figmaCommentId: commentId
-        }
-      });
-
-      results.push({
-        success: true,
-        commentId,
-        violationId: violation.id
-      });
-
-      successCount++;
-
-      logger.info('コメント投稿成功', { 
-        violationId: violation.id, 
-        commentId 
-      });
-
-      // 🔧 レート制限対策: 投稿間隔を1秒に延長（500ms → 1000ms）
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-    } catch (error) {
-      logger.error('コメント投稿失敗', { 
-        violationId: violation.id, 
-        error 
-      });
-
-      results.push({
-        success: false,
-        violationId: violation.id,
-        error: error instanceof Error ? error.message : '不明なエラー'
-      });
-
-      failureCount++;
     }
   }
 
-  logger.info('プロジェクト一括コメント投稿完了', {
-    userId,
+  const successCount = results.filter(r => r.success).length;
+  const failureCount = results.filter(r => !r.success).length;
+
+  logger.info('✅ [SERVICE] 一括コメント投稿完了', {
     projectId,
     totalViolations: violations.length,
     successCount,
@@ -653,168 +728,79 @@ export async function postCommentsBySeverity(
   userId: string,
   projectId: string,
   minSeverity: Severity,
-  options: CommentMessageOptions = {}
+  options: Partial<CommentMessageOptions> = {}
 ): Promise<BulkCommentPostResult> {
-  logger.info('重要度別一括コメント投稿開始', { userId, projectId, minSeverity });
+  logger.info('📝 [SERVICE] postCommentsBySeverity 開始', { userId, projectId, minSeverity });
 
-  // プロジェクト所有者チェック
-  const project = await prisma.project.findUnique({
-    where: { id: projectId }
-  });
+  // バリデーション
+  validateSeverity(minSeverity);
+  await validateProjectOwnership(projectId, userId);
 
-  if (!project) {
-    throw new NotFoundError(`プロジェクトが見つかりません: ${projectId}`);
-  }
+  // オプション構築
+  const commentOptions = buildCommentOptions(options);
 
-  if (project.userId !== userId) {
-    throw new ValidationError('このプロジェクトへのアクセス権限がありません');
-  }
+  // 重要度順序
+  const severityOrder: Record<Severity, number> = {
+    'CRITICAL': 1,
+    'MAJOR': 2,
+    'MINOR': 3
+  };
 
-  // 重要度フィルタ設定
-  const severityFilter: Severity[] = [];
-  
-  if (minSeverity === 'CRITICAL') {
-    severityFilter.push('CRITICAL');
-  } else if (minSeverity === 'MAJOR') {
-    severityFilter.push('CRITICAL', 'MAJOR');
-  } else {
-    severityFilter.push('CRITICAL', 'MAJOR', 'MINOR');
-  }
-
-  // 未投稿のルール違反を取得
+  // 未投稿のルール違反を重要度フィルタで取得
   const violations = await prisma.ruleViolation.findMany({
     where: {
       projectId,
-      commentPosted: false,
-      frameId: { not: null },
-      severity: { in: severityFilter }
+      commentPosted: false
     },
-    orderBy: [
-      { severity: 'asc' },
-      { createdAt: 'asc' }
-    ]
+    include: {
+      project: true
+    }
   });
 
-  logger.info('投稿対象ルール違反取得（重要度フィルタ適用）', { 
-    userId, 
-    projectId,
-    minSeverity,
-    violationCount: violations.length 
-  });
+  // 重要度フィルタリング
+  const filteredViolations = violations.filter(
+    v => severityOrder[v.severity] <= severityOrder[minSeverity]
+  );
+
+  logger.info(`対象ルール違反: ${filteredViolations.length}件（${minSeverity}以上）`, { projectId });
 
   const results: CommentPostResult[] = [];
-  let successCount = 0;
-  let failureCount = 0;
 
-  // 各ルール違反にコメント投稿
-  for (const violation of violations) {
-    try {
-      const message = generateCommentMessage(violation, options);
+  // 一括投稿
+  for (const violation of filteredViolations) {
+    const result = await postCommentForViolation(
+      userId,
+      violation.id,
+      commentOptions
+    );
 
-      const commentId = await postCommentToFigma(
-        userId,
-        project.figmaFileKey,
-        violation.frameId!,
-        message
+    results.push(result);
+
+    // レート制限回避のための待機
+    if (filteredViolations.indexOf(violation) < filteredViolations.length - 1) {
+      await new Promise(resolve => 
+        setTimeout(resolve, RATE_LIMIT_CONFIG.BULK_INTERVAL_MS)
       );
-
-      await prisma.ruleViolation.update({
-        where: { id: violation.id },
-        data: {
-          commentPosted: true,
-          figmaCommentId: commentId
-        }
-      });
-
-      results.push({
-        success: true,
-        commentId,
-        violationId: violation.id
-      });
-
-      successCount++;
-
-      // 🔧 レート制限対策: 投稿間隔を1秒に延長（500ms → 1000ms）
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-    } catch (error) {
-      logger.error('コメント投稿失敗', { 
-        violationId: violation.id, 
-        error 
-      });
-
-      results.push({
-        success: false,
-        violationId: violation.id,
-        error: error instanceof Error ? error.message : '不明なエラー'
-      });
-
-      failureCount++;
     }
   }
 
-  logger.info('重要度別一括コメント投稿完了', {
-    userId,
+  const successCount = results.filter(r => r.success).length;
+  const failureCount = results.filter(r => !r.success).length;
+
+  logger.info('✅ [SERVICE] 重要度フィルタ付き一括投稿完了', {
     projectId,
     minSeverity,
-    totalViolations: violations.length,
+    totalViolations: filteredViolations.length,
     successCount,
     failureCount
   });
 
   return {
-    totalViolations: violations.length,
+    totalViolations: filteredViolations.length,
     successCount,
     failureCount,
     results
   };
-}
-
-/**
- * コメント投稿済みのルール違反をリセット（再診断時）
- * 
- * @param userId - FIGLEANユーザーID
- * @param projectId - プロジェクトID
- * @returns リセットした件数
- */
-export async function resetCommentFlags(
-  userId: string,
-  projectId: string
-): Promise<number> {
-  logger.info('コメントフラグリセット開始', { userId, projectId });
-
-  // プロジェクト所有者チェック
-  const project = await prisma.project.findUnique({
-    where: { id: projectId }
-  });
-
-  if (!project) {
-    throw new NotFoundError(`プロジェクトが見つかりません: ${projectId}`);
-  }
-
-  if (project.userId !== userId) {
-    throw new ValidationError('このプロジェクトへのアクセス権限がありません');
-  }
-
-  // コメントフラグをリセット
-  const result = await prisma.ruleViolation.updateMany({
-    where: {
-      projectId,
-      commentPosted: true
-    },
-    data: {
-      commentPosted: false,
-      figmaCommentId: null
-    }
-  });
-
-  logger.info('コメントフラグリセット完了', { 
-    userId, 
-    projectId,
-    resetCount: result.count 
-  });
-
-  return result.count;
 }
 
 /**
@@ -828,27 +814,16 @@ export async function getPostedComments(
   userId: string,
   projectId: string
 ): Promise<RuleViolation[]> {
-  logger.info('投稿済みコメント取得開始', { userId, projectId });
+  logger.info('📋 [SERVICE] getPostedComments 開始', { userId, projectId });
 
-  // プロジェクト所有者チェック
-  const project = await prisma.project.findUnique({
-    where: { id: projectId }
-  });
+  // プロジェクト所有権確認
+  await validateProjectOwnership(projectId, userId);
 
-  if (!project) {
-    throw new NotFoundError(`プロジェクトが見つかりません: ${projectId}`);
-  }
-
-  if (project.userId !== userId) {
-    throw new ValidationError('このプロジェクトへのアクセス権限がありません');
-  }
-
-  // 投稿済みルール違反を取得
+  // 投稿済みコメントを取得
   const violations = await prisma.ruleViolation.findMany({
     where: {
       projectId,
-      commentPosted: true,
-      figmaCommentId: { not: null }
+      commentPosted: true
     },
     orderBy: [
       { severity: 'asc' },
@@ -856,13 +831,116 @@ export async function getPostedComments(
     ]
   });
 
-  logger.info('投稿済みコメント取得完了', { 
-    userId, 
+  logger.info('✅ [SERVICE] 投稿済みコメント取得成功', {
     projectId,
-    count: violations.length 
+    count: violations.length
   });
 
   return violations;
+}
+
+
+// =====================================
+// ルール違反のコメント削除
+// =====================================
+
+export async function deleteCommentForViolation(
+  userId: string,
+  projectId: string,
+  violationId: string
+): Promise<void> {
+  logger.info('🗑️ [SERVICE] deleteCommentForViolation 開始', { userId, projectId, violationId });
+
+  // プロジェクト所有権確認
+  const project = await validateProjectOwnership(projectId, userId);
+
+  // ルール違反取得
+  const violation = await prisma.ruleViolation.findUnique({
+    where: { id: violationId, projectId }
+  });
+
+  if (!violation) {
+    throw new NotFoundError('指定されたルール違反が見つかりません');
+  }
+
+  if (!violation.commentPosted || !violation.figmaCommentId) {
+    throw new ValidationError('このルール違反にはコメントが投稿されていません');
+  }
+
+  // Figmaからコメント削除
+  await deleteCommentFromFigma(userId, project.figmaFileKey, violation.figmaCommentId);
+
+  // データベース更新
+  await prisma.ruleViolation.update({
+    where: { id: violationId },
+    data: {
+      commentPosted: false,
+      figmaCommentId: null
+    }
+  });
+
+  logger.info('✅ [SERVICE] コメント削除完了', { violationId });
+}
+
+// =====================================
+// コメントフラグリセット
+// =====================================
+
+export async function resetCommentFlags(
+  userId: string,
+  projectId: string
+): Promise<number> {
+  logger.info('🔄 [SERVICE] resetCommentFlags 開始', { userId, projectId });
+
+  // プロジェクト所有権確認
+  await validateProjectOwnership(projectId, userId);
+
+  // コメントフラグをリセット
+  const result = await prisma.ruleViolation.updateMany({
+    where: {
+      projectId,
+      commentPosted: true
+    },
+    data: {
+      commentPosted: false,
+      figmaCommentId: null
+    }
+  });
+
+  logger.info('✅ [SERVICE] コメントフラグリセット完了', {
+    projectId,
+    resetCount: result.count
+  });
+
+  return result.count;
+}
+
+// =====================================
+// コメントプレビュー生成
+// =====================================
+
+export async function generateCommentPreview(
+  userId: string,
+  violationId: string,
+  options: Partial<CommentMessageOptions> = {}
+): Promise<{ message: string; options: CommentMessageOptions }> {
+  logger.info('👁️ [SERVICE] generateCommentPreview 開始', { userId, violationId });
+
+  // バリデーション
+  const violation = await validateViolationOwnership(violationId, userId);
+
+  // オプション構築
+  const commentOptions = buildCommentOptions(options);
+
+  // メッセージ生成
+  const message = generateCommentMessage(violation, commentOptions);
+
+  logger.info('✅ [SERVICE] コメントプレビュー生成成功', { violationId });
+
+  return {
+    message,
+    options: commentOptions
+  };
 }
 
 // =====================================
@@ -871,11 +949,12 @@ export async function getPostedComments(
 
 export default {
   generateCommentMessage,
-  postCommentToFigma,
-  deleteCommentFromFigma,
   postCommentForViolation,
   postCommentsForProject,
   postCommentsBySeverity,
+  getPostedComments,
+  deleteCommentFromFigma,
+  deleteCommentForViolation,
   resetCommentFlags,
-  getPostedComments
+  generateCommentPreview
 };
