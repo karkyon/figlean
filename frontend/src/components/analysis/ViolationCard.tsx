@@ -27,7 +27,7 @@ interface ViolationCardProps {
   onCommentPosted?: () => void;
 }
 
-export function ViolationCard({ violation, projectId, onCommentPosted }: ViolationCardProps) {
+export function ViolationCard({ violation, projectId, project, onCommentPosted }: ViolationCardProps) {
   const [isPosting, setIsPosting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
