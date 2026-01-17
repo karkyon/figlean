@@ -3,7 +3,7 @@
 // 概要: AutoFix APIコントローラー
 // 機能説明: AutoFix関連エンドポイントのハンドリング（ビジネスロジックなし）
 // 作成日: 2026-01-17
-// 更新日: 2026-01-17
+// 更新日: 2026-01-17 - 引数順序修正（Service層の定義に合わせてuserId, projectIdの順に統一）
 // 更新理由: TypeScriptエラー完全修正、他コントローラーと設計統一
 // 依存関係: Express, autofixサービス群, utils/logger, errors
 // =====================================
@@ -67,8 +67,8 @@ export async function generatePreview(
     logger.info('AutoFixプレビュー要求', { projectId, userId, violationCount: requestBody.violationIds.length });
 
     const preview = await autofixPreviewService.generatePreview(
-      projectId,
       userId,
+      projectId,
       requestBody
     );
 
@@ -111,8 +111,8 @@ export async function executeAutoFix(
     logger.info('AutoFix実行要求', { projectId, userId, violationCount: requestBody.violationIds.length });
 
     const result = await autofixExecutorService.executeAutoFix(
-      projectId,
       userId,
+      projectId,
       requestBody
     );
 
@@ -154,7 +154,7 @@ export async function executeIndividualFix(
 
     logger.info('AutoFix個別実行要求', { projectId, userId, violationId });
 
-    const result = await autofixExecutorService.executeAutoFix(projectId, userId, {
+    const result = await autofixExecutorService.executeAutoFix(userId, projectId, {
       violationIds: [violationId],
       deleteComments: deleteComment || false,
     });

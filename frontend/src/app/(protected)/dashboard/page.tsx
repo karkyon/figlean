@@ -1,7 +1,10 @@
 /**
- * FIGLEAN Frontend - Dashboard（メイン画面）- Phase 3拡張版
- * パス: /dashboard
- * Phase 3.2-3.4: フィルター・ソート・検索機能追加
+ * FIGLEAN Frontend - Dashboard（メイン画面）修正版
+ * ファイルパス: frontend/src/app/(protected)/dashboard/page.tsx
+ * 機能: プロジェクト一覧表示、フィルター・ソート・検索機能、ユーザーメニュー
+ * 作成日: 2026-01-13
+ * 更新日: 2026-01-17 - DashboardHeader統合、フィルター初期状態Closed
+ * 依存関係: @/components/layout/DashboardHeader, @/lib/api/projects
  */
 
 'use client';
@@ -9,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
+import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import * as projectsApi from '@/lib/api/projects';
 import { CreateProjectModal } from '@/components/project/CreateProjectModal';
 import type { Project } from '@/types/models';
@@ -54,7 +58,7 @@ export default function DashboardPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [scoreMin, setScoreMin] = useState<number | null>(null);
   const [scoreMax, setScoreMax] = useState<number | null>(null);
-  const [isFilterExpanded, setIsFilterExpanded] = useState(true);
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false); // 初期状態: Closed
 
   // =====================================
   // データ取得
@@ -85,36 +89,32 @@ export default function DashboardPage() {
   };
 
   // =====================================
-  // フィルター・ソート・検索ロジック
+  // フィルター・ソート処理
   // =====================================
 
   useEffect(() => {
-    applyFiltersAndSort();
-  }, [searchQuery, statusFilter, sortField, sortOrder, scoreMin, scoreMax, projects]);
-
-  const applyFiltersAndSort = () => {
     let result = [...projects];
 
     // 検索フィルター
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(p => 
-        p.name.toLowerCase().includes(query) ||
-        (p.figmaFileName && p.figmaFileName.toLowerCase().includes(query))
+    if (searchQuery) {
+      result = result.filter(
+        (p) =>
+          p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          p.description?.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
 
     // ステータスフィルター
     if (statusFilter !== 'ALL') {
-      result = result.filter(p => p.analysisStatus === statusFilter);
+      result = result.filter((p) => p.analysisStatus === statusFilter);
     }
 
     // スコアフィルター
     if (scoreMin !== null) {
-      result = result.filter(p => p.figleanScore !== null && p.figleanScore >= scoreMin);
+      result = result.filter((p) => p.figleanScore !== null && p.figleanScore >= scoreMin);
     }
     if (scoreMax !== null) {
-      result = result.filter(p => p.figleanScore !== null && p.figleanScore <= scoreMax);
+      result = result.filter((p) => p.figleanScore !== null && p.figleanScore <= scoreMax);
     }
 
     // ソート
@@ -124,8 +124,8 @@ export default function DashboardPage() {
 
       switch (sortField) {
         case 'name':
-          aValue = a.name.toLowerCase();
-          bValue = b.name.toLowerCase();
+          aValue = a.name || '';
+          bValue = b.name || '';
           break;
         case 'figleanScore':
           aValue = a.figleanScore ?? -1;
@@ -148,33 +148,17 @@ export default function DashboardPage() {
     });
 
     setFilteredProjects(result);
-  };
+  }, [projects, searchQuery, statusFilter, sortField, sortOrder, scoreMin, scoreMax]);
 
   // =====================================
-  // イベントハンドラー
+  // 削除処理
   // =====================================
 
-  const handleProjectCreated = (projectId: string) => {
-    setIsCreateModalOpen(false);
-    fetchProjects();
-    router.push(`/projects/${projectId}`);
-  };
-
-  const handleClearFilters = () => {
-    setSearchQuery('');
-    setStatusFilter('ALL');
-    setScoreMin(null);
-    setScoreMax(null);
-    setSortField('createdAt');
-    setSortOrder('desc');
-  };
-
-  const handleDeleteClick = (e: React.MouseEvent, projectId: string, projectName: string) => {
-    e.stopPropagation();
+  const handleDeleteClick = (project: Project) => {
     setDeleteModal({
       isOpen: true,
-      projectId,
-      projectName,
+      projectId: project.id,
+      projectName: project.name || 'Unnamed Project',
     });
   };
 
@@ -183,49 +167,12 @@ export default function DashboardPage() {
 
     try {
       await projectsApi.deleteProject(deleteModal.projectId);
+      await fetchProjects();
       setDeleteModal({ isOpen: false, projectId: null, projectName: '' });
-      fetchProjects();
     } catch (error: any) {
-      console.error('プロジェクト削除エラー:', error);
+      console.error('削除エラー:', error);
       alert('プロジェクトの削除に失敗しました');
     }
-  };
-
-  const handleDeleteCancel = () => {
-    setDeleteModal({ isOpen: false, projectId: null, projectName: '' });
-  };
-
-  // =====================================
-  // ヘルパー関数
-  // =====================================
-
-  const getScoreColor = (score: number | null) => {
-    if (!score) return '#94a3b8';
-    if (score >= 90) return '#16a34a';
-    if (score >= 70) return '#d97706';
-    return '#ef4444';
-  };
-
-  const getStatusLabel = (status: string) => {
-    const labels: Record<string, string> = {
-      PENDING: '待機中',
-      IMPORTING: 'インポート中',
-      ANALYZING: '解析中',
-      COMPLETED: '完了',
-      FAILED: '失敗',
-    };
-    return labels[status] || status;
-  };
-
-  const getStatusBadgeColor = (status: string) => {
-    const colors: Record<string, string> = {
-      PENDING: 'bg-gray-100 text-gray-800',
-      IMPORTING: 'bg-blue-100 text-blue-800',
-      ANALYZING: 'bg-yellow-100 text-yellow-800',
-      COMPLETED: 'bg-green-100 text-green-800',
-      FAILED: 'bg-red-100 text-red-800',
-    };
-    return colors[status] || 'bg-gray-100 text-gray-800';
   };
 
   // =====================================
@@ -234,30 +181,12 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-gradient-to-r from-gray-900 to-gray-800 text-white flex items-center justify-between px-6 shadow-lg">
-        <div className="text-2xl font-extrabold">FIGLEAN</div>
-        <div className="flex items-center gap-4">
-          {user?.hasFigmaToken ? (
-            <div className="flex items-center gap-2 bg-green-600 px-3 py-1.5 rounded-full text-xs font-semibold">
-              <span className="w-2 h-2 bg-white rounded-full"></span>
-              Figma Connected
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 bg-gray-600 px-3 py-1.5 rounded-full text-xs font-semibold">
-              <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
-              Figma Not Connected
-            </div>
-          )}
-          <div className="bg-gray-700 px-3 py-1.5 rounded-full text-sm">
-            {user?.name || user?.email}
-          </div>
-        </div>
-      </header>
+      {/* ヘッダー */}
+      <DashboardHeader />
 
-      {/* Main Content */}
+      {/* メインコンテンツ */}
       <main className="max-w-7xl mx-auto px-8 py-8 mt-16">
-        {/* Dashboard Header */}
+        {/* ダッシュボードヘッダー */}
         <div className="mb-8">
           <h1 className="text-3xl font-extrabold text-gray-900 mb-2">
             Dashboard
@@ -267,7 +196,7 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Action Cards */}
+        {/* アクションカード */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           <button
             onClick={() => setIsCreateModalOpen(true)}
@@ -304,318 +233,243 @@ export default function DashboardPage() {
               ドキュメント
             </h3>
             <p className="text-sm text-gray-600 leading-relaxed">
-              使い方ガイドとAPIリファレンスを確認します
+              使い方やルールの詳細を確認します
             </p>
           </button>
         </div>
 
-        {/* Projects Section */}
-        <div className="mb-12">
+        {/* プロジェクト一覧セクション */}
+        <div>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-gray-900">
-              プロジェクト一覧 ({filteredProjects.length})
+            <h2 className="text-2xl font-bold text-gray-900">
+              プロジェクト一覧
             </h2>
-          </div>
-
-          {/* フィルター・ソート・検索UI */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
-            {/* フィルターヘッダー */}
             <button
               onClick={() => setIsFilterExpanded(!isFilterExpanded)}
-              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
             >
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-semibold text-gray-900">🔍 検索・フィルター</span>
-                {!isFilterExpanded && filteredProjects.length !== projects.length && (
-                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">
-                    フィルター適用中
-                  </span>
-                )}
-              </div>
               <svg
-                className={`w-5 h-5 text-gray-600 transition-transform ${isFilterExpanded ? 'rotate-180' : ''}`}
+                className={`w-4 h-4 transition-transform ${isFilterExpanded ? 'rotate-180' : ''}`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
               </svg>
+              {isFilterExpanded ? '検索・フィルターを閉じる' : '検索・フィルターを開く'}
             </button>
+          </div>
 
-            {/* フィルターコンテンツ */}
-            {isFilterExpanded && (
-              <div className="px-6 pb-6 pt-2">
-                {/* 検索バー */}
-                <div className="mb-4">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+          {/* フィルター・検索エリア（開閉可能） */}
+          {isFilterExpanded && (
+            <div className="bg-white rounded-lg p-6 mb-6 shadow-sm border border-gray-200">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* 検索 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     検索
                   </label>
                   <input
                     type="text"
-                    placeholder="プロジェクト名またはFigmaファイル名で検索..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="プロジェクト名で検索..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
                 </div>
 
-                {/* フィルター行 */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                  {/* ステータスフィルター */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      ステータス
-                    </label>
-                    <select
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="ALL">すべて</option>
-                      <option value="PENDING">待機中</option>
-                      <option value="IMPORTING">インポート中</option>
-                      <option value="ANALYZING">解析中</option>
-                      <option value="COMPLETED">完了</option>
-                      <option value="FAILED">失敗</option>
-                    </select>
-                  </div>
-
-                  {/* スコア範囲フィルター */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      スコア (最小)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      placeholder="0"
-                      value={scoreMin ?? ''}
-                      onChange={(e) => setScoreMin(e.target.value ? Number(e.target.value) : null)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      スコア (最大)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      placeholder="100"
-                      value={scoreMax ?? ''}
-                      onChange={(e) => setScoreMax(e.target.value ? Number(e.target.value) : null)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  {/* クリアボタン */}
-                  <div className="flex items-end">
-                    <button
-                      onClick={handleClearFilters}
-                      className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-semibold"
-                    >
-                      フィルターをクリア
-                    </button>
-                  </div>
+                {/* ステータスフィルター */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    ステータス
+                  </label>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  >
+                    <option value="ALL">すべて</option>
+                    <option value="PENDING">待機中</option>
+                    <option value="IMPORTING">インポート中</option>
+                    <option value="ANALYZING">解析中</option>
+                    <option value="COMPLETED">完了</option>
+                    <option value="FAILED">失敗</option>
+                  </select>
                 </div>
 
-                {/* ソート行 */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      並び替え
-                    </label>
-                    <select
-                      value={sortField}
-                      onChange={(e) => setSortField(e.target.value as SortField)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="createdAt">作成日時</option>
-                      <option value="updatedAt">更新日時</option>
-                      <option value="name">プロジェクト名</option>
-                      <option value="figleanScore">FIGLEANスコア</option>
-                    </select>
-                  </div>
+                {/* ソートフィールド */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    並び替え
+                  </label>
+                  <select
+                    value={sortField}
+                    onChange={(e) => setSortField(e.target.value as SortField)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  >
+                    <option value="createdAt">作成日時</option>
+                    <option value="updatedAt">更新日時</option>
+                    <option value="figleanScore">スコア</option>
+                    <option value="name">名前</option>
+                  </select>
+                </div>
 
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      順序
-                    </label>
-                    <select
-                      value={sortOrder}
-                      onChange={(e) => setSortOrder(e.target.value as SortOrder)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="desc">降順</option>
-                      <option value="asc">昇順</option>
-                    </select>
-                  </div>
+                {/* ソート順序 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    順序
+                  </label>
+                  <select
+                    value={sortOrder}
+                    onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  >
+                    <option value="desc">降順</option>
+                    <option value="asc">昇順</option>
+                  </select>
                 </div>
               </div>
-            )}
-          </div>
-
-          {/* エラー表示 */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-              <div className="flex items-center gap-2">
-                <span className="text-red-600 font-semibold">⚠️ エラー</span>
-                <span className="text-red-800">{error}</span>
-              </div>
-              <button
-                onClick={fetchProjects}
-                className="mt-3 text-sm text-red-600 hover:text-red-800 font-semibold underline"
-              >
-                再試行
-              </button>
             </div>
           )}
 
-          {/* ローディング状態 */}
+          {/* エラー表示 */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+              {error}
+            </div>
+          )}
+
+          {/* ローディング */}
           {isLoading ? (
-            <div className="text-center py-12">
-              <div className="inline-block w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-              <p className="mt-4 text-gray-600">読み込み中...</p>
+            <div className="flex justify-center items-center py-20">
+              <div className="animate-spin text-4xl">⏳</div>
+            </div>
+          ) : filteredProjects.length === 0 ? (
+            <div className="bg-white rounded-lg p-12 text-center shadow-sm border border-gray-200">
+              <div className="text-6xl mb-4">📭</div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                プロジェクトがありません
+              </h3>
+              <p className="text-gray-600 mb-6">
+                新規プロジェクトを作成して診断を開始しましょう
+              </p>
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
+              >
+                プロジェクトを作成
+              </button>
             </div>
           ) : (
-            <>
-              {/* プロジェクトなし */}
-              {(!filteredProjects || filteredProjects.length === 0) ? (
-                <div className="bg-white rounded-xl p-12 text-center border border-gray-200">
-                  <div className="text-6xl mb-4">📁</div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    {searchQuery || statusFilter !== 'ALL' || scoreMin !== null || scoreMax !== null
-                      ? '条件に一致するプロジェクトがありません'
-                      : 'プロジェクトがありません'}
-                  </h3>
-                  <p className="text-gray-600 mb-6">
-                    {searchQuery || statusFilter !== 'ALL' || scoreMin !== null || scoreMax !== null
-                      ? 'フィルター条件を変更してください'
-                      : '新規プロジェクトを作成してFigmaデザインを診断しましょう'}
-                  </p>
-                  {!searchQuery && statusFilter === 'ALL' && scoreMin === null && scoreMax === null && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredProjects.map((project) => (
+                <div
+                  key={project.id}
+                  className="bg-white rounded-lg p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer group"
+                  onClick={() => router.push(`/projects/${project.id}`)}
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <h3 className="text-lg font-bold text-gray-900 group-hover:text-indigo-600 transition-colors">
+                      {project.name}
+                    </h3>
                     <button
-                      onClick={() => setIsCreateModalOpen(true)}
-                      className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteClick(project);
+                      }}
+                      className="text-gray-400 hover:text-red-600 transition-colors"
                     >
-                      プロジェクトを作成
+                      🗑️
                     </button>
+                  </div>
+
+                  {project.description && (
+                    <p className="text-sm text-gray-600 mb-4 line-clamp-2">
+                      {project.description}
+                    </p>
                   )}
-                </div>
-              ) : (
-                /* プロジェクト一覧表示 */
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {filteredProjects.map((project) => (
-                    <button
-                      key={project.id}
-                      onClick={() => router.push(`/projects/${project.id}`)}
-                    　className="bg-white rounded-xl p-5 shadow-sm border border-gray-200 hover:shadow-lg transition-all duration-200 hover:-translate-y-1 text-left relative"                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <h3 className="text-base font-bold text-gray-900 flex-1 pr-2">
-                          {project.name}
-                        </h3>
-                        {project.figleanScore !== null && (
-                          <div
-                            className="text-2xl font-black"
-                            style={{ color: getScoreColor(project.figleanScore) }}
-                          >
-                            {project.figleanScore}
-                          </div>
-                        )}
-                      </div>
 
-                      <div className="text-xs text-gray-600 mb-3">
-                        {project.figmaFileName || 'Figma File'}
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        {/* ステータスバッジ */}
-                        <span className={`text-xs px-2 py-1 rounded ${getStatusBadgeColor(project.analysisStatus)}`}>
-                          {getStatusLabel(project.analysisStatus)}
+                  {project.figleanScore !== null && (
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-gray-700">
+                          FIGLEAN適合度
                         </span>
-
-                        {/* HTML生成可能バッジ */}
-                        {project.figleanScore !== null && project.figleanScore >= 90 && (
-                          <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
-                            HTML生成可能
-                          </span>
-                        )}
-
-                        {/* Grid生成可能バッジ */}
-                        {project.figleanScore !== null && project.figleanScore === 100 && (
-                          <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
-                            Grid生成可能
-                          </span>
-                        )}
+                        <span className={`text-2xl font-bold ${
+                          project.figleanScore >= 90 ? 'text-green-600' :
+                          project.figleanScore >= 70 ? 'text-yellow-600' :
+                          'text-red-600'
+                        }`}>
+                          {project.figleanScore}
+                        </span>
                       </div>
-
-                      {/* 日時表示と削除ボタン */}
-                      <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
-                        <div className="text-xs text-gray-500">
-                          更新: {new Date(project.updatedAt).toLocaleDateString('ja-JP')}
-                        </div>
-                        {/* 削除ボタン */}
-                        <button
-                          onClick={(e) => handleDeleteClick(e, project.id, project.name)}
-                          className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
-                          title="プロジェクトを削除"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-4 w-4"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        </button>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full ${
+                            project.figleanScore >= 90 ? 'bg-green-600' :
+                            project.figleanScore >= 70 ? 'bg-yellow-600' :
+                            'bg-red-600'
+                          }`}
+                          style={{ width: `${project.figleanScore}%` }}
+                        />
                       </div>
-                    </button>
-                  ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <span>{new Date(project.createdAt).toLocaleDateString('ja-JP')}</span>
+                    <span className={`px-2 py-1 rounded ${
+                      project.analysisStatus === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                      project.analysisStatus === 'ANALYZING' ? 'bg-blue-100 text-blue-800' :
+                      project.analysisStatus === 'FAILED' ? 'bg-red-100 text-red-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {project.analysisStatus === 'COMPLETED' ? '完了' :
+                       project.analysisStatus === 'ANALYZING' ? '解析中' :
+                       project.analysisStatus === 'FAILED' ? '失敗' : '待機中'}
+                    </span>
+                  </div>
                 </div>
-              )}
-            </>
+              ))}
+            </div>
           )}
         </div>
       </main>
 
-      {/* Create Project Modal */}
+      {/* モーダル */}
       <CreateProjectModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        onSuccess={handleProjectCreated}
+        onSuccess={fetchProjects}
       />
 
-      {/* Delete Confirm Modal */}
+      {/* 削除確認モーダル */}
       {deleteModal.isOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
-            <h3 className="text-xl font-bold text-gray-900 mb-4">プロジェクトを削除</h3>
-            <p className="text-gray-600 mb-2">
-              <span className="font-semibold text-gray-900">{deleteModal.projectName}</span> を削除してもよろしいですか?
-            </p>
-            <p className="text-red-600 text-sm mb-6">
-              この操作は取り消せません。すべての診断データも削除されます。
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">
+              プロジェクトを削除
+            </h3>
+            <p className="text-gray-600 mb-6">
+              「{deleteModal.projectName}」を削除しますか？この操作は取り消せません。
             </p>
             <div className="flex gap-3 justify-end">
               <button
-                onClick={handleDeleteCancel}
-                className="px-5 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold"
+                onClick={() => setDeleteModal({ isOpen: false, projectId: null, projectName: '' })}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
               >
                 キャンセル
               </button>
               <button
                 onClick={handleDeleteConfirm}
-                className="px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-semibold"
+                className="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
               >
-                削除する
+                削除
               </button>
             </div>
           </div>

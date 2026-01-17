@@ -3,7 +3,7 @@
 // 概要: Violation用アクションボタン群
 // 機能説明: AutoFixボタンとFigmaコメントボタンをスタイリッシュに配置
 // 作成日: 2026-01-17
-// 更新日: 2026-01-17 - 初回作成
+// 更新日: 2026-01-17 - Figma確認ボタンをaタグに修正（元の動作するコードに戻す）
 // 依存関係: @/components/ui/Button, @/lib/api/*
 // =====================================
 
@@ -86,24 +86,6 @@ export function ViolationActionButtons({
     }
   };
 
-  // Figma確認
-  const handleOpenFigma = () => {
-    if (!project.figmaFileKey || !violation.figmaNodeId) return;
-
-    // figmaNodeIdから数値部分のみを抽出してnode-id形式に変換
-    // 例: "1234:5678" → "1234-5678"
-    const nodeId = violation.figmaNodeId.replace(':', '-');
-    const figmaUrl = `https://www.figma.com/file/${project.figmaFileKey}?node-id=${nodeId}`;
-    
-    logger.info('[ViolationActionButtons] Figma確認', { 
-      figmaUrl, 
-      originalNodeId: violation.figmaNodeId,
-      convertedNodeId: nodeId 
-    });
-    
-    window.open(figmaUrl, '_blank');
-  };
-
   return (
     <div className="flex items-center gap-2">
       {/* AutoFixボタン */}
@@ -127,13 +109,15 @@ export function ViolationActionButtons({
 
       {/* Figmaコメント投稿/確認ボタン */}
       {violation.commentPosted ? (
-        <button
-          onClick={handleOpenFigma}
+        <a
+          href={`https://www.figma.com/file/${violation.figmaFileKey || project.figmaFileKey}?node-id=${violation.figmaNodeId || violation.frameId}`}
+          target="_blank"
+          rel="noopener noreferrer"
           className="px-3 py-1.5 text-sm font-medium bg-green-50 text-green-700 border border-green-200 rounded-md hover:bg-green-100 transition-colors flex items-center gap-1.5"
         >
           <span>✓</span>
           <span>Figmaで確認</span>
-        </button>
+        </a>
       ) : (
         <button
           onClick={handlePostComment}
