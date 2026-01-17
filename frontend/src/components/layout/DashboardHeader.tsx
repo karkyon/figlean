@@ -77,7 +77,7 @@ export function DashboardHeader() {
         {/* 右側: Figma接続状態 + ユーザーメニュー */}
         <div className="flex items-center gap-4">
           {/* Figma接続状態 */}
-          {user?.figmaAccessToken ? (
+          {user?.hasFigmaToken ? (
             <div className="flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 rounded-full text-xs font-semibold border border-green-200">
               <span className="w-2 h-2 bg-green-600 rounded-full animate-pulse"></span>
               Figma Connected

@@ -1,10 +1,10 @@
 /**
  * FIGLEAN Frontend - Dashboard（メイン画面）修正版
  * ファイルパス: frontend/src/app/(protected)/dashboard/page.tsx
- * 機能: プロジェクト一覧表示、フィルター・ソート・検索機能、ユーザーメニュー
+ * 機能: プロジェクト一覧表示、フィルター・ソート・検索機能、ユーザーメニュー、Figma連携設定Modal
  * 作成日: 2026-01-13
- * 更新日: 2026-01-17 - DashboardHeader統合、フィルター初期状態Closed
- * 依存関係: @/components/layout/DashboardHeader, @/lib/api/projects
+ * 更新日: 2026-01-17 - DashboardHeader統合、フィルター初期状態Closed、FigmaSettingsModal追加
+ * 依存関係: @/components/layout/DashboardHeader, @/components/settings/FigmaSettingsModal, @/lib/api/projects
  */
 
 'use client';
@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
+import { FigmaSettingsModal } from '@/components/settings/FigmaSettingsModal';
 import * as projectsApi from '@/lib/api/projects';
 import { CreateProjectModal } from '@/components/project/CreateProjectModal';
 import type { Project } from '@/types/models';
@@ -41,6 +42,7 @@ export default function DashboardPage() {
   
   // モーダル
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isFigmaSettingsModalOpen, setIsFigmaSettingsModalOpen] = useState(false);
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
     projectId: string | null;
@@ -212,7 +214,7 @@ export default function DashboardPage() {
           </button>
 
           <button
-            onClick={() => router.push('/settings/figma')}
+            onClick={() => setIsFigmaSettingsModalOpen(true)}
             className="bg-white rounded-2xl p-8 shadow-sm border-2 border-transparent hover:border-indigo-600 hover:shadow-xl transition-all duration-200 hover:-translate-y-1 text-left"
           >
             <div className="text-5xl mb-4">🔗</div>
@@ -445,6 +447,12 @@ export default function DashboardPage() {
       <CreateProjectModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={fetchProjects}
+      />
+
+      <FigmaSettingsModal
+        isOpen={isFigmaSettingsModalOpen}
+        onClose={() => setIsFigmaSettingsModalOpen(false)}
         onSuccess={fetchProjects}
       />
 
