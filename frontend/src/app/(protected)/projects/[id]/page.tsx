@@ -1,20 +1,21 @@
 /**
- * FIGLEAN Frontend - プロジェクト詳細ページ（日本語化版）
+ * FIGLEAN Frontend - プロジェクト詳細ページ（AutoFix統合版）
  * ファイルパス: frontend/src/app/(protected)/projects/[id]/page.tsx
  * 
  * 機能:
  * - プロジェクト基本情報表示
  * - FIGLEAN適合度スコア表示
- * - タブナビゲーション（概要 / 違反 / 崩壊予測 / 改善提案 / 生成）
+ * - タブナビゲーション（概要 / 違反 / 崩壊予測 / 改善提案 / 生成 / AutoFix履歴）
  * - 診断結果カード表示
  * - HTML生成機能（Generator Tab）
  * - Figmaコメント一括投稿機能
+ * - AutoFix機能（個別修正・一括修正・履歴・Rollback）
  * - ローディング状態管理
  * - エラーハンドリング
  * 
  * 作成日: 2026年1月13日
- * 更新日: 2026年1月16日 - Figmaコメント確認ボタン追加、ページネーション改善、再解析機能実装
- * 依存関係: @/components/ui/Button, @/components/analysis/*, @/lib/api/client
+ * 更新日: 2026年1月17日 - AutoFix機能統合
+ * 依存関係: @/components/ui/Button, @/components/analysis/*, @/components/autofix/*, @/lib/api/client
  */
 
 'use client';
@@ -22,11 +23,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
-import { ViolationCard } from '@/components/analysis/ViolationCard';
+import { ViolationActionButtons } from '@/components/analysis/ViolationActionButtons';
 import { PredictionCard } from '@/components/analysis/PredictionCard';
 import { SuggestionCard } from '@/components/analysis/SuggestionCard';
 import GeneratorTab from '@/components/project/GeneratorTab';
+import { AutoFixPreviewModal } from '@/components/autofix/AutoFixPreviewModal';
+import { AutoFixHistoryPanel } from '@/components/autofix/AutoFixHistoryPanel';
 import { Project, Violation, Prediction, Suggestion } from '@/types/models';
+import type { AutoFixExecuteResponse } from '@/types/autofix';
 import apiClient from '@/lib/api/client';
 import { logger } from '@/lib/logger';
 
@@ -51,7 +55,7 @@ interface AnalysisResult {
   analyzedAt: string;
 }
 
-type Tab = 'overview' | 'violations' | 'predictions' | 'suggestions' | 'generator';
+type Tab = 'overview' | 'violations' | 'predictions' | 'suggestions' | 'generator' | 'autofix';
 
 // =====================================
 // メインコンポーネント
@@ -86,6 +90,14 @@ export default function ProjectDetailPage() {
   const [itemsPerPage, setItemsPerPage] = useState<number>(20);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
+  // AutoFix状態
+  const [selectedViolationIds, setSelectedViolationIds] = useState<string[]>([]);
+  const [isAutoFixModalOpen, setIsAutoFixModalOpen] = useState(false);
+  const [autoFixDeleteComments, setAutoFixDeleteComments] = useState(false);
+
+  // 詳細開閉状態
+  const [openDetailIds, setOpenDetailIds] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     if (projectId) {
       logger.component('ProjectDetailPage', 'Mount', { projectId });
@@ -95,7 +107,7 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     logger.component('ProjectDetailPage', `Tab Changed: ${activeTab}`, { projectId, activeTab });
-    if (activeTab !== 'overview' && activeTab !== 'generator') {
+    if (activeTab !== 'overview' && activeTab !== 'generator' && activeTab !== 'autofix') {
       loadTabData();
     }
   }, [activeTab]);
@@ -194,7 +206,7 @@ export default function ProjectDetailPage() {
       logger.success('再解析完了', { projectId });
 
       await loadProject();
-      if (activeTab !== 'overview' && activeTab !== 'generator') {
+      if (activeTab !== 'overview' && activeTab !== 'generator' && activeTab !== 'autofix') {
         await loadTabData();
       }
     } catch (error: any) {
@@ -252,6 +264,59 @@ export default function ProjectDetailPage() {
     } finally {
       setIsBulkPosting(false);
     }
+  };
+
+  // AutoFix: 違反選択トグル
+  const handleToggleViolationSelect = (violationId: string) => {
+    setSelectedViolationIds(prev => {
+      if (prev.includes(violationId)) {
+        return prev.filter(id => id !== violationId);
+      } else {
+        return [...prev, violationId];
+      }
+    });
+  };
+
+  // AutoFix: 全選択/全解除
+  const handleToggleSelectAll = () => {
+    if (selectedViolationIds.length === paginatedViolations.length) {
+      setSelectedViolationIds([]);
+    } else {
+      setSelectedViolationIds(paginatedViolations.map(v => v.id));
+    }
+  };
+
+  // AutoFix: 一括修正実行
+  const handleBulkAutoFix = () => {
+    if (selectedViolationIds.length === 0) {
+      alert('修正する違反を選択してください');
+      return;
+    }
+    setIsAutoFixModalOpen(true);
+  };
+
+  // AutoFix: 修正成功時
+  const handleAutoFixSuccess = async (result: AutoFixExecuteResponse) => {
+    logger.success('AutoFix修正完了', { 
+      historyId: result.historyId,
+      successCount: result.successCount,
+      failedCount: result.failedCount,
+    });
+
+    alert(`🔧 AutoFix完了\n\n成功: ${result.successCount}件\n失敗: ${result.failedCount}件`);
+
+    // 違反リストとプロジェクト情報を再読み込み
+    await loadProject();
+    await loadTabData();
+
+    // 選択状態をリセット
+    setSelectedViolationIds([]);
+  };
+
+  // AutoFix: エラー時
+  const handleAutoFixError = (error: string) => {
+    logger.error('AutoFix修正エラー', new Error(error), { projectId });
+    alert(`❌ AutoFix失敗\n\n${error}`);
   };
 
   if (isLoading) {
@@ -449,6 +514,16 @@ export default function ProjectDetailPage() {
           >
             🎨 生成
           </button>
+          <button
+            onClick={() => setActiveTab('autofix')}
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+              activeTab === 'autofix'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            🔧 AutoFix履歴
+          </button>
         </nav>
       </div>
 
@@ -522,6 +597,7 @@ export default function ProjectDetailPage() {
                       </h3>
                       <ul className="space-y-2 text-sm text-indigo-800">
                         <li>• 違反タブで詳細なルール違反を確認</li>
+                        <li>• 🔧 AutoFixで自動修正を実行して即座にスコア改善</li>
                         <li>• 崩壊予測タブで崩れリスクを把握</li>
                         <li>• 改善提案タブで改善提案を確認</li>
                         {analysisResult.canGenerateHTML && (
@@ -616,29 +692,163 @@ export default function ProjectDetailPage() {
 
                 {/* ヘッダー */}
                 <div className="flex items-center justify-between">
-                  <h2 className="text-2xl font-bold">ルール違反一覧</h2>
+                  <div className="flex items-center gap-4">
+                    <h2 className="text-2xl font-bold">ルール違反一覧</h2>
 
-                  <button
-                    onClick={handleBulkPostComments}
-                    disabled={isBulkPosting || violations.length === 0}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
-                  >
-                    {isBulkPosting ? '投稿中...' : '💬 Figmaに一括投稿'}
-                  </button>
+                    {/* 全選択チェックボックス */}
+                    {paginatedViolations.length > 0 && (
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedViolationIds.length === paginatedViolations.length && paginatedViolations.length > 0}
+                          onChange={handleToggleSelectAll}
+                          className="w-4 h-4 rounded border-gray-300"
+                        />
+                        <span className="text-sm text-gray-600">
+                          全選択 ({selectedViolationIds.length}件)
+                        </span>
+                      </label>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {/* AutoFix一括修正ボタン */}
+                    {selectedViolationIds.length > 0 && (
+                      <button
+                        onClick={handleBulkAutoFix}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                      >
+                        🔧 AutoFix ({selectedViolationIds.length}件)
+                      </button>
+                    )}
+
+                    {/* Figmaコメント一括投稿 */}
+                    <button
+                      onClick={handleBulkPostComments}
+                      disabled={isBulkPosting || violations.length === 0}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                    >
+                      {isBulkPosting ? '投稿中...' : '💬 Figmaに一括投稿'}
+                    </button>
+                  </div>
                 </div>
 
                 {/* 一覧 */}
                 {paginatedViolations.length > 0 ? (
                   <div className="grid grid-cols-1 gap-4">
-                    {paginatedViolations.map(v => (
-                      <ViolationCard
-                        key={v.id}
-                        violation={v}
-                        projectId={projectId}
-                        project={project}
-                        onCommentPosted={loadTabData}
-                      />
-                    ))}
+                    {paginatedViolations.map(v => {
+                      const isDetailOpen = openDetailIds.has(v.id);
+
+                      const toggleDetail = () => {
+                        setOpenDetailIds(prev => {
+                          const next = new Set(prev);
+                          if (next.has(v.id)) {
+                            next.delete(v.id);
+                          } else {
+                            next.add(v.id);
+                          }
+                          return next;
+                        });
+                      };
+
+                      return (
+                        <div key={v.id} className="bg-white border rounded-lg p-4 hover:border-gray-300 transition-colors">
+                          {/* ヘッダー部分: チェックボックス + タイトル + アクションボタン */}
+                          <div className="flex items-start justify-between gap-4 mb-3">
+                            {/* 左: チェックボックス + タイトル */}
+                            <div className="flex items-start gap-3 flex-1">
+                              <input
+                                type="checkbox"
+                                checked={selectedViolationIds.includes(v.id)}
+                                onChange={() => handleToggleViolationSelect(v.id)}
+                                className="mt-1 w-4 h-4 rounded border-gray-300 cursor-pointer"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className={`px-2 py-0.5 text-xs font-medium rounded ${
+                                    v.severity === 'CRITICAL' ? 'bg-red-100 text-red-800' :
+                                    v.severity === 'MAJOR' ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-blue-100 text-blue-800'
+                                  }`}>
+                                    {v.severity === 'CRITICAL' ? '🔴 重大' :
+                                     v.severity === 'MAJOR' ? '🟡 警告' : '🔵 軽微'}
+                                  </span>
+                                  <span className="text-xs text-gray-500">{v.ruleCategory}</span>
+                                  {v.commentPosted && (
+                                    <span className="px-2 py-0.5 text-xs font-medium rounded bg-green-50 text-green-700 border border-green-200">
+                                      ✓ Figmaコメント投稿済み
+                                    </span>
+                                  )}
+                                </div>
+                                <h3 className="font-semibold text-gray-900">{v.ruleName}</h3>
+                                <p className="text-sm text-gray-600 mt-1">{v.description}</p>
+                              </div>
+                            </div>
+
+                            {/* 右: アクションボタン */}
+                            <div className="flex items-center gap-2">
+                              <ViolationActionButtons
+                                violation={v}
+                                projectId={projectId}
+                                project={project}
+                                onSuccess={async () => {
+                                  await loadProject();
+                                  await loadTabData();
+                                }}
+                                onError={handleAutoFixError}
+                              />
+                              <button
+                                onClick={toggleDetail}
+                                className="px-3 py-1.5 text-sm font-medium bg-gray-50 text-gray-700 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors flex items-center gap-1.5"
+                              >
+                                <span>{isDetailOpen ? '▼' : '▶'}</span>
+                                <span>詳細</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 詳細情報（開閉可能） */}
+                          {isDetailOpen && (
+                            <div className="mt-3 pt-3 border-t space-y-2">
+                              {v.frameName && (
+                                <div className="text-sm">
+                                  <span className="text-gray-600 font-medium">対象フレーム: </span>
+                                  <span className="text-gray-900">{v.frameName}</span>
+                                </div>
+                              )}
+                              {v.detectedValue && (
+                                <div className="text-sm">
+                                  <span className="text-gray-600 font-medium">検出値: </span>
+                                  <span className="text-gray-900 font-mono bg-gray-50 px-2 py-1 rounded">
+                                    {v.detectedValue}
+                                  </span>
+                                </div>
+                              )}
+                              {v.expectedValue && (
+                                <div className="text-sm">
+                                  <span className="text-gray-600 font-medium">期待値: </span>
+                                  <span className="text-gray-900 font-mono bg-gray-50 px-2 py-1 rounded">
+                                    {v.expectedValue}
+                                  </span>
+                                </div>
+                              )}
+                              {v.impact && (
+                                <div className="text-sm">
+                                  <span className="text-gray-600 font-medium">影響: </span>
+                                  <span className="text-gray-900">{v.impact}</span>
+                                </div>
+                              )}
+                              {v.suggestion && (
+                                <div className="text-sm">
+                                  <span className="text-gray-600 font-medium">提案: </span>
+                                  <span className="text-gray-900">{v.suggestion}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-20 text-gray-500">
@@ -646,10 +856,9 @@ export default function ProjectDetailPage() {
                   </div>
                 )}
 
-                {/* モダンなページネーション */}
+                {/* ページネーション */}
                 {totalPages > 1 && (
                   <div className="flex items-center justify-center gap-2 mt-8">
-                    {/* 最初へ */}
                     <button
                       onClick={() => setCurrentPage(1)}
                       disabled={currentPage === 1}
@@ -659,7 +868,6 @@ export default function ProjectDetailPage() {
                       <span className="text-gray-600">⏮</span>
                     </button>
 
-                    {/* 前へ */}
                     <button
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
@@ -668,17 +876,14 @@ export default function ProjectDetailPage() {
                       ← 前へ
                     </button>
 
-                    {/* ページ番号 */}
                     <div className="flex items-center gap-1">
                       {Array.from({ length: totalPages }, (_, i) => i + 1)
                         .filter(page => {
-                          // 現在のページ周辺のみ表示
                           if (page === 1 || page === totalPages) return true;
                           if (Math.abs(page - currentPage) <= 1) return true;
                           return false;
                         })
                         .map((page, index, array) => {
-                          // 省略記号の挿入
                           const prevPage = array[index - 1];
                           const showEllipsis = prevPage && page - prevPage > 1;
 
@@ -702,7 +907,6 @@ export default function ProjectDetailPage() {
                         })}
                     </div>
 
-                    {/* 次へ */}
                     <button
                       onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                       disabled={currentPage === totalPages}
@@ -711,7 +915,6 @@ export default function ProjectDetailPage() {
                       次へ →
                     </button>
 
-                    {/* 最後へ */}
                     <button
                       onClick={() => setCurrentPage(totalPages)}
                       disabled={currentPage === totalPages}
@@ -781,9 +984,35 @@ export default function ProjectDetailPage() {
 
             {/* Generator タブ */}
             {activeTab === 'generator' && <GeneratorTab project={project} />}
+
+            {/* AutoFix履歴タブ */}
+            {activeTab === 'autofix' && (
+              <AutoFixHistoryPanel
+                projectId={projectId}
+                onRollbackSuccess={async () => {
+                  await loadProject();
+                  // 違反データを再読み込み（違反タブに戻った時のため）
+                  const currentTab = activeTab;
+                  setActiveTab('violations');
+                  await loadTabData();
+                  setActiveTab(currentTab);
+                }}
+              />
+            )}
           </>
         )}
       </div>
+
+      {/* AutoFixプレビューモーダル */}
+      <AutoFixPreviewModal
+        projectId={projectId}
+        violationIds={selectedViolationIds}
+        isOpen={isAutoFixModalOpen}
+        onClose={() => setIsAutoFixModalOpen(false)}
+        onSuccess={handleAutoFixSuccess}
+        onError={handleAutoFixError}
+        deleteComments={autoFixDeleteComments}
+      />
     </div>
   );
 }
