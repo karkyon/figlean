@@ -67,8 +67,8 @@ export async function generatePreview(
     logger.info('AutoFixプレビュー要求', { projectId, userId, violationCount: requestBody.violationIds.length });
 
     const preview = await autofixPreviewService.generatePreview(
-      userId,
       projectId,
+      userId,
       requestBody
     );
 

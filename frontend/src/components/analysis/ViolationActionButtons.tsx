@@ -14,6 +14,7 @@ import { executeIndividualAutoFix } from '@/lib/api/autofix';
 import apiClient from '@/lib/api/client';
 import { logger } from '@/lib/logger';
 import type { Violation, Project } from '@/types/models';
+import { AutoFixStatus } from '@/types/autofix';
 
 interface ViolationActionButtonsProps {
   violation: Violation;
@@ -47,9 +48,17 @@ export function ViolationActionButtons({
 
       logger.info('[ViolationActionButtons] AutoFix実行成功', { result });
 
-      if (result.successCount > 0) {
+      // ★修正: 失敗件数もチェック
+      if (result.failedCount > 0) {
+        // 失敗がある場合
+        const errorItem = result.items?.find(item => item.status === AutoFixStatus.FAILED);
+        const errorMsg = errorItem?.error || '修正に失敗しました';
+        onError?.(errorMsg);
+      } else if (result.successCount > 0) {
+        // 成功
         onSuccess?.();
       } else {
+        // その他
         onError?.('修正に失敗しました');
       }
     } catch (error: any) {

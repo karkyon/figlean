@@ -131,6 +131,7 @@ export async function executeAutoFix(
 
       itemResults.push(result);
 
+      // ★修正: statusをチェックして成功/失敗をカウント
       if (result.status === AutoFixStatus.COMPLETED) {
         successCount++;
         figmaChanges.push({
@@ -139,6 +140,7 @@ export async function executeAutoFix(
           change: result.afterValue,
         });
       } else {
+        // ★追加: 失敗時のカウント
         failedCount++;
       }
 
@@ -272,8 +274,11 @@ async function processViolationFix(
 
     await modifyFigmaNodes(figmaAccessToken, figmaFileKey, [nodeUpdate]);
 
+    // ★修正: 成功時のみCOMPLETEDを返す
+    logger.info('Figma修正API呼び出し成功', { frameId });
+
     return {
-      id: '', // AutoFixItemのIDは後でPrismaが割り当て
+      id: '',
       violationId: violation.id,
       category: fixMapping.category,
       fixType: fixMapping.fixType,
@@ -284,7 +289,15 @@ async function processViolationFix(
       afterValue,
     };
   } catch (error: any) {
-    logger.error('Figma修正API呼び出しエラー', { frameId, error });
+    // ★修正: エラー詳細をログ出力
+    logger.error('Figma修正API呼び出しエラー', { 
+      frameId, 
+      error: error.message,
+      statusCode: error.response?.status,
+      errorData: error.response?.data,
+    });
+
+    // ★修正: FAILEDステータスを返す
     return {
       id: '',
       violationId: violation.id,
@@ -295,7 +308,7 @@ async function processViolationFix(
       status: AutoFixStatus.FAILED,
       beforeValue,
       afterValue,
-      errorMessage: error.message,
+      errorMessage: error.response?.data?.err || error.message,
     };
   }
 }
