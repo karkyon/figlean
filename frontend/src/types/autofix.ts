@@ -126,6 +126,7 @@ export interface AutoFixItemResult {
   before: Record<string, any>;
   after: Record<string, any>;
   error?: string;
+  errorMessage?: string;
   executedAt: string;
 }
 

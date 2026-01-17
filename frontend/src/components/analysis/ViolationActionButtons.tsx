@@ -48,18 +48,29 @@ export function ViolationActionButtons({
 
       logger.info('[ViolationActionButtons] AutoFix実行成功', { result });
 
-      // ★修正: 失敗件数もチェック
-      if (result.failedCount > 0) {
-        // 失敗がある場合
-        const errorItem = result.items?.find(item => item.status === AutoFixStatus.FAILED);
-        const errorMsg = errorItem?.error || '修正に失敗しました';
-        onError?.(errorMsg);
-      } else if (result.successCount > 0) {
-        // 成功
+      // ★修正: シンプルな条件分岐
+      if (result.successCount > 0) {
+        // 成功がある場合
+        logger.info('[ViolationActionButtons] AutoFix成功', { 
+          successCount: result.successCount,
+          failedCount: result.failedCount 
+        });
+        
         onSuccess?.();
       } else {
-        // その他
-        onError?.('修正に失敗しました');
+        // 成功が0件の場合は失敗
+        const failedItem = result.items?.[0];
+        const errorMsg = failedItem?.errorMessage || 
+                        failedItem?.error || 
+                        'Figma APIでノードが見つかりませんでした（404 Not found）';
+        
+        logger.error('[ViolationActionButtons] AutoFix失敗', { 
+          failedCount: result.failedCount,
+          errorMsg,
+          items: result.items 
+        });
+        
+        onError?.(errorMsg);
       }
     } catch (error: any) {
       logger.error('[ViolationActionButtons] AutoFix実行エラー', { error });
