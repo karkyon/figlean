@@ -138,14 +138,20 @@ apiClient.interceptors.response.use(
       url: error.config?.url,
     });
 
-    // 401エラー（認証エラー）の場合、トークンを削除してログインページへ
+    // 401エラー（認証エラー）の場合、トークンを削除
+    // ★修正: リダイレクトは削除（Next.js middlewareに任せる）
     if (error.response?.status === 401) {
       removeAuthToken();
       
-      // クライアントサイドでのみリダイレクト
+      // Zustand storeの状態もクリア
       if (typeof window !== 'undefined') {
-        window.location.href = '/login';
+        // ローカルストレージから認証情報を削除
+        localStorage.removeItem('figlean-auth-storage');
       }
+      
+      // window.location.href = '/login'; は行わない
+      // 理由: Next.js middlewareが自動的に /login にリダイレクトする
+      console.warn('[API Client] 401 Unauthorized - トークンを削除しました');
     }
 
     // エラーレスポンスを返す

@@ -7,88 +7,71 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
-import { getAuthToken } from '@/lib/api/client';
-
-// =====================================
-// 認証保護コンポーネント
-// =====================================
 
 interface AuthGuardProps {
   children: React.ReactNode;
-  fallback?: React.ReactNode;
 }
 
 /**
- * 認証が必要なページを保護するコンポーネント
- * 未認証の場合はログインページにリダイレクト
+ * ゲストユーザー専用ガード
+ * ログイン済みユーザーを /dashboard にリダイレクト
  */
-export const AuthGuard: React.FC<AuthGuardProps> = ({ 
-  children, 
-  fallback = <LoadingSpinner /> 
-}) => {
-  const router = useRouter();
-  const { isAuthenticated, isLoading, refreshUser } = useAuthStore();
-
-  useEffect(() => {
-    const token = getAuthToken();
-    
-    // トークンがある場合はユーザー情報を取得
-    if (token && !isAuthenticated && !isLoading) {
-      refreshUser().catch(() => {
-        router.push('/login');
-      });
-    }
-    
-    // トークンがない場合はログインページへ
-    if (!token && !isLoading) {
-      router.push('/login');
-    }
-  }, [isAuthenticated, isLoading, router, refreshUser]);
-
-  // ローディング中
-  if (isLoading) {
-    return <>{fallback}</>;
-  }
-
-  // 未認証の場合は何も表示しない（リダイレクト中）
-  if (!isAuthenticated) {
-    return <>{fallback}</>;
-  }
-
-  // 認証済みの場合は子要素を表示
-  return <>{children}</>;
-};
-
-/**
- * ゲストのみアクセス可能なページを保護するコンポーネント
- * 認証済みの場合はダッシュボードにリダイレクト
- */
-export const GuestGuard: React.FC<AuthGuardProps> = ({ 
-  children, 
-  fallback = <LoadingSpinner /> 
-}) => {
+export function GuestGuard({ children }: AuthGuardProps) {
   const router = useRouter();
   const { isAuthenticated, isLoading } = useAuthStore();
 
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
-      router.push('/dashboard');
+    // ★重要: ローディング中は何もしない
+    if (isLoading) return;
+
+    // ★修正: 既にログイン済みの場合のみリダイレクト
+    if (isAuthenticated) {
+      console.log('[GuestGuard] Already authenticated, redirecting to /dashboard');
+      router.replace('/dashboard'); // ★push ではなく replace を使用
     }
   }, [isAuthenticated, isLoading, router]);
 
-  // ローディング中
+  // ★重要: ローディング中や認証済みの場合は何も表示しない
   if (isLoading) {
-    return <>{fallback}</>;
+    return <div>読み込み中...</div>;
   }
 
-  // 認証済みの場合は何も表示しない（リダイレクト中）
   if (isAuthenticated) {
-    return <>{fallback}</>;
+    return null;
   }
 
-  // 未認証の場合は子要素を表示
   return <>{children}</>;
-};
+}
+
+/**
+ * ログイン必須ガード
+ * 未ログインユーザーを /login にリダイレクト
+ */
+export function AuthGuard({ children }: AuthGuardProps) {
+  const router = useRouter();
+  const { isAuthenticated, isLoading } = useAuthStore();
+
+  useEffect(() => {
+    // ★重要: ローディング中は何もしない
+    if (isLoading) return;
+
+    if (!isAuthenticated) {
+      console.log('[AuthGuard] Not authenticated, redirecting to /login');
+      router.replace('/login'); // ★push ではなく replace を使用
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  // ★重要: ローディング中は何も表示しない
+  if (isLoading) {
+    return <div>読み込み中...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  return <>{children}</>;
+}
 
 // =====================================
 // ローディングスピナー

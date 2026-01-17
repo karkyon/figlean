@@ -108,6 +108,9 @@ export const useAuthStore = create<AuthState>()(
 
       // ユーザー情報を再取得
       refreshUser: async () => {
+        // ★追加: 既にローディング中なら何もしない（二重呼び出し防止）
+        if (get().isLoading) return;
+        
         set({ isLoading: true });
         try {
           const user = await authApi.getCurrentUser();
@@ -118,13 +121,15 @@ export const useAuthStore = create<AuthState>()(
             error: null,
           });
         } catch (error: any) {
+          // ★修正: エラー時は静かに失敗させる
+          console.warn('[AuthStore] ユーザー情報取得失敗 - ログアウト状態にします');
           set({
             user: null,
             isAuthenticated: false,
             isLoading: false,
-            error: 'ユーザー情報の取得に失敗しました',
+            error: null,
           });
-          throw error;
+          // ★重要: エラーを throw しない
         }
       },
 

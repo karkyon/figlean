@@ -5,6 +5,9 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
+import { useEffect } from 'react';
+import { useAuthStore } from '@/store/authStore';
+import { usePathname } from 'next/navigation';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -18,11 +21,26 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const { refreshUser, isAuthenticated } = useAuthStore();
+
+  useEffect(() => {
+    // ★重要: ログインページでは refreshUser を呼ばない
+    if (pathname === '/login' || pathname === '/register') {
+      return;
+    }
+
+    // ★修正: 認証済みの場合のみ refreshUser を呼ぶ
+    if (isAuthenticated) {
+      refreshUser().catch(() => {
+        // エラーは無視（authStore内で処理済み）
+      });
+    }
+  }, [pathname, isAuthenticated]);
+
   return (
     <html lang="ja">
-      <body className={inter.className}>
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
