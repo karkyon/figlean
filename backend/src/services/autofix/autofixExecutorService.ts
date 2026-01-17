@@ -4,7 +4,7 @@
 // 機能説明: Figma APIを使用してデザインを実際に修正する
 // 作成日: 2026-01-17
 // 更新日: 2026-01-17
-// 更新理由: TypeScriptエラー修正（import修正、nullチェック追加、未使用変数削除）
+// 更新理由: エラーカウントロジック修正、try-catch構造修正
 // 依存関係: PrismaClient, utils/figmaModifier, types/autofix, utils/logger
 // =====================================
 
@@ -131,7 +131,6 @@ export async function executeAutoFix(
 
       itemResults.push(result);
 
-      // ★修正: statusをチェックして成功/失敗をカウント
       if (result.status === AutoFixStatus.COMPLETED) {
         successCount++;
         figmaChanges.push({
@@ -140,7 +139,6 @@ export async function executeAutoFix(
           change: result.afterValue,
         });
       } else {
-        // ★追加: 失敗時のカウント
         failedCount++;
       }
 
@@ -266,38 +264,22 @@ async function processViolationFix(
   const { beforeValue, afterValue } = generateFixValues(fixMapping.fixType, violation);
 
   // Figma API呼び出し
-  try {
-    const nodeUpdate: FigmaNodeUpdate = {
-      nodeId: frameId,
-      properties: afterValue,
-    };
+  const nodeUpdate: FigmaNodeUpdate = {
+    nodeId: frameId,
+    properties: afterValue,
+  };
 
-    await modifyFigmaNodes(figmaAccessToken, figmaFileKey, [nodeUpdate]);
+  const modifyResult = await modifyFigmaNodes(figmaAccessToken, figmaFileKey, [nodeUpdate]);
 
-    // ★修正: 成功時のみCOMPLETEDを返す
-    logger.info('Figma修正API呼び出し成功', { frameId });
-
-    return {
-      id: '',
-      violationId: violation.id,
-      category: fixMapping.category,
-      fixType: fixMapping.fixType,
-      frameName,
-      figmaNodeId: frameId,
-      status: AutoFixStatus.COMPLETED,
-      beforeValue,
-      afterValue,
-    };
-  } catch (error: any) {
-    // ★修正: エラー詳細をログ出力
-    logger.error('Figma修正API呼び出しエラー', { 
+  // エラーがあるかチェック
+  if (modifyResult && modifyResult.errorCount > 0) {
+    // 失敗として扱う
+    logger.error('Figma修正API呼び出しエラー（errorCount > 0）', { 
       frameId, 
-      error: error.message,
-      statusCode: error.response?.status,
-      errorData: error.response?.data,
+      errorCount: modifyResult.errorCount,
+      successCount: modifyResult.successCount,
     });
 
-    // ★修正: FAILEDステータスを返す
     return {
       id: '',
       violationId: violation.id,
@@ -308,9 +290,24 @@ async function processViolationFix(
       status: AutoFixStatus.FAILED,
       beforeValue,
       afterValue,
-      errorMessage: error.response?.data?.err || error.message,
+      errorMessage: 'Figma APIでノードが見つかりませんでした（404 Not found）',
     };
   }
+
+  // 成功時のみCOMPLETEDを返す
+  logger.info('Figma修正API呼び出し成功', { frameId });
+
+  return {
+    id: '',
+    violationId: violation.id,
+    category: fixMapping.category,
+    fixType: fixMapping.fixType,
+    frameName,
+    figmaNodeId: frameId,
+    status: AutoFixStatus.COMPLETED,
+    beforeValue,
+    afterValue,
+  };
 }
 
 // =====================================

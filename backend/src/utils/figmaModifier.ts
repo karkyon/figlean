@@ -4,13 +4,13 @@
 // 機能説明: Figma APIを使用してノードを修正する処理
 // 作成日: 2026-01-17
 // 更新日: 2026-01-17
-// 更新理由: 新規作成
+// 更新理由: 戻り値の型を修正（successCount, errorCountに統一）
 // 依存関係: axios, utils/logger
 // =====================================
 
 import axios, { AxiosError } from 'axios';
 import logger from './logger';
-import { FigmaNodeUpdate, FigmaModificationResponse } from '../types/autofix';
+import { FigmaNodeUpdate } from '../types/autofix';
 
 const FIGMA_API_BASE_URL = 'https://api.figma.com/v1';
 
@@ -22,7 +22,7 @@ export async function modifyFigmaNodes(
   accessToken: string,
   fileKey: string,
   updates: FigmaNodeUpdate[]
-): Promise<FigmaModificationResponse> {
+): Promise<{ successCount: number; errorCount: number }> {
   logger.info('Figmaノード修正開始', { fileKey, updateCount: updates.length });
 
   const modifiedNodes: string[] = [];
@@ -42,8 +42,6 @@ export async function modifyFigmaNodes(
     }
   }
 
-  const success = errors.length === 0;
-
   logger.info('Figmaノード修正完了', {
     fileKey,
     successCount: modifiedNodes.length,
@@ -51,9 +49,8 @@ export async function modifyFigmaNodes(
   });
 
   return {
-    success,
-    modifiedNodes,
-    errors: errors.length > 0 ? errors : undefined,
+    successCount: modifiedNodes.length,
+    errorCount: errors.length,
   };
 }
 
