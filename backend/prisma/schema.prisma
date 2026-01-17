@@ -1,14 +1,16 @@
 // =====================================
 // FIGLEAN - Complete Database Schema
 // Figma Design Quality Analysis Platform
-// Version: 2.0
+// Version: 2.1 (AutoFix機能追加)
 // 作成日: 2026年1月10日
+// 更新日: 2026年1月17日 - AutoFix機能追加
 // =====================================
 // 
 // 設計方針:
 // - Frontend/Backend仕様書に基づく完全なデータモデル
 // - Figma診断・スコアリング・HTML生成の全機能対応
 // - ルールエンジン、改善提案、崩壊予測の永続化
+// - AutoFix機能（自動修正・履歴・Rollback）対応
 // - 将来のAI機能拡張に対応
 // =====================================
 
@@ -22,7 +24,7 @@ datasource db {
 }
 
 // =====================================
-// エニュメーション定義
+// エニュメーション(Enum)定義
 // =====================================
 
 /// ユーザーロール
@@ -85,6 +87,55 @@ enum GenerationStatus {
   @@map("generation_status")
 }
 
+/// AutoFix修正カテゴリ
+enum AutoFixCategory {
+  AUTO_LAYOUT    // Auto Layout関連
+  SIZE_CONSTRAINT // サイズ制約関連
+  NAMING         // 命名規則関連
+  COMPONENT      // Component化関連
+  STYLE          // スタイル統一関連
+
+  @@map("autofix_category")
+}
+
+/// AutoFix修正タイプ（細分化）
+enum AutoFixType {
+  // Auto Layout関連
+  ADD_AUTO_LAYOUT          // Auto Layout追加
+  CHANGE_DIRECTION         // Direction変更
+  SET_GAP                  // Gap設定
+  ENABLE_WRAP              // Wrap有効化
+  
+  // サイズ制約関連
+  CHANGE_TO_FILL           // Width/HeightをFILLに
+  CHANGE_TO_HUG            // Width/HeightをHUGに
+  REMOVE_FIXED_SIZE        // 固定サイズ削除
+  
+  // 命名規則関連
+  RENAME_SEMANTIC          // セマンティック命名に変更
+  
+  // Component化関連
+  CREATE_COMPONENT         // Component作成
+  DETACH_INSTANCE          // インスタンス切り離し
+  
+  // スタイル統一関連
+  UNIFY_COLORS             // 色統一
+  UNIFY_TYPOGRAPHY         // タイポグラフィ統一
+
+  @@map("autofix_type")
+}
+
+/// AutoFix実行ステータス
+enum AutoFixStatus {
+  PENDING       // 実行待機中
+  EXECUTING     // 実行中
+  COMPLETED     // 完了
+  FAILED        // 失敗
+  ROLLED_BACK   // ロールバック済み
+
+  @@map("autofix_status")
+}
+
 // =====================================
 // ユーザー管理
 // =====================================
@@ -116,6 +167,11 @@ model User {
   // リレーション
   projects          Project[]
   generatedHtmls    GeneratedHtml[]
+  
+  // AutoFix関連リレーション
+  autoFixHistories  AutoFixHistory[] @relation("AutoFixExecutor")
+  autoFixRollbacks  AutoFixHistory[] @relation("AutoFixRollbacker")
+  autoFixConfig     AutoFixConfig?
 
   @@index([email])
   @@index([role])
@@ -164,6 +220,9 @@ model Project {
   predictions        BreakPrediction[]
   suggestions        ImprovementSuggestion[]
   generatedHtmls     GeneratedHtml[]
+  
+  // AutoFix関連リレーション
+  autoFixHistories   AutoFixHistory[]
 
   @@index([userId])
   @@index([analysisStatus])
@@ -271,6 +330,9 @@ model RuleViolation {
 
   // リレーション
   project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  // AutoFix関連リレーション
+  autoFixItems  AutoFixItem[]
 
   @@index([projectId])
   @@index([severity])
@@ -644,4 +706,131 @@ model FigmaApiRateLimit {
   @@index([userId])
   @@index([windowEnd])
   @@map("figma_api_rate_limits")
+}
+
+// =====================================
+// AutoFix機能管理テーブル
+// =====================================
+
+/// AutoFix実行履歴テーブル
+model AutoFixHistory {
+  id              String         @id @default(uuid()) @db.Uuid
+  projectId       String         @map("project_id") @db.Uuid
+  userId          String         @map("user_id") @db.Uuid
+  
+  // 実行設定
+  isIndividual    Boolean        @default(false) @map("is_individual") // 個別実行かどうか
+  violationId     String?        @map("violation_id") @db.Uuid // 個別実行時の違反ID
+  
+  // 修正内容サマリー
+  fixedCount      Int            @default(0) @map("fixed_count")
+  fixedViolations Json           @map("fixed_violations") // 修正した違反のリスト
+  
+  // スコア変化
+  beforeScore     Int            @map("before_score")
+  afterScore      Int            @map("after_score")
+  scoreDelta      Int            @map("score_delta")
+  
+  // 実行ステータス
+  status          AutoFixStatus  @default(PENDING)
+  
+  // Figma変更詳細
+  figmaChanges    Json           @map("figma_changes") // Figma API実行内容の記録
+  
+  // コメント削除設定
+  deleteComments  Boolean        @default(false) @map("delete_comments")
+  deletedComments Json?          @map("deleted_comments") // 削除したコメントのID配列
+  
+  // エラー情報
+  errorMessage    String?        @map("error_message") @db.Text
+  
+  // ロールバック情報
+  isRolledBack    Boolean        @default(false) @map("is_rolled_back")
+  rollbackAt      DateTime?      @map("rollback_at") @db.Timestamptz(6)
+  rollbackBy      String?        @map("rollback_by") @db.Uuid
+  
+  // タイムスタンプ
+  executedAt      DateTime       @default(now()) @map("executed_at") @db.Timestamptz(6)
+  completedAt     DateTime?      @map("completed_at") @db.Timestamptz(6)
+  
+  // リレーション
+  project         Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user            User           @relation("AutoFixExecutor", fields: [userId], references: [id], onDelete: Cascade)
+  rollbackUser    User?          @relation("AutoFixRollbacker", fields: [rollbackBy], references: [id])
+  items           AutoFixItem[]
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([status])
+  @@index([executedAt])
+  @@map("autofix_histories")
+}
+
+/// AutoFix個別修正項目テーブル
+model AutoFixItem {
+  id              String         @id @default(uuid()) @db.Uuid
+  historyId       String         @map("history_id") @db.Uuid
+  violationId     String         @map("violation_id") @db.Uuid
+  
+  // 修正カテゴリとタイプ
+  category        AutoFixCategory
+  fixType         AutoFixType    @map("fix_type")
+  
+  // 対象Frame情報
+  figmaFileKey    String         @map("figma_file_key") @db.VarChar(255)
+  figmaNodeId     String         @map("figma_node_id") @db.VarChar(255)
+  frameName       String         @map("frame_name") @db.VarChar(255)
+  
+  // 修正内容
+  beforeValue     Json           @map("before_value")
+  afterValue      Json           @map("after_value")
+  
+  // 実行結果
+  status          AutoFixStatus  @default(PENDING)
+  errorMessage    String?        @map("error_message") @db.Text
+  
+  // Figma API呼び出し記録
+  figmaApiCall    Json?          @map("figma_api_call") // APIリクエスト内容
+  figmaApiResponse Json?         @map("figma_api_response") // APIレスポンス
+  
+  // タイムスタンプ
+  executedAt      DateTime       @default(now()) @map("executed_at") @db.Timestamptz(6)
+  
+  // リレーション
+  history         AutoFixHistory @relation(fields: [historyId], references: [id], onDelete: Cascade)
+  violation       RuleViolation  @relation(fields: [violationId], references: [id], onDelete: Cascade)
+
+  @@index([historyId])
+  @@index([violationId])
+  @@index([category])
+  @@index([fixType])
+  @@map("autofix_items")
+}
+
+/// AutoFix設定テーブル（ユーザーごとの自動修正設定）
+model AutoFixConfig {
+  id              String         @id @default(uuid()) @db.Uuid
+  userId          String         @map("user_id") @db.Uuid
+  
+  // カテゴリごとの有効/無効
+  enableAutoLayout    Boolean    @default(true) @map("enable_auto_layout")
+  enableSizeConstraint Boolean   @default(true) @map("enable_size_constraint")
+  enableNaming        Boolean    @default(true) @map("enable_naming")
+  enableComponent     Boolean    @default(false) @map("enable_component")
+  enableStyle         Boolean    @default(false) @map("enable_style")
+  
+  // 修正タイプごとの有効/無効（JSON形式で柔軟に管理）
+  enabledFixTypes Json           @map("enabled_fix_types") // { "ADD_AUTO_LAYOUT": true, "CHANGE_DIRECTION": false, ... }
+  
+  // コメント削除設定
+  autoDeleteComments Boolean     @default(false) @map("auto_delete_comments")
+  
+  // 更新日時
+  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  // リレーション
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@map("autofix_configs")
 }

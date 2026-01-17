@@ -26,6 +26,7 @@ import figmaRoutes from './routes/figma.routes';
 import analysisRoutes from './routes/analysis.routes';
 import figmaCommentRoutes from './routes/figmaComment.routes';
 import htmlRoutes from './routes/html.routes';
+import autofixRoutes from './routes/autofix.routes';
 
 // Config
 import { config } from './config/env';
@@ -153,6 +154,9 @@ app.use('/api/figma/comments', figmaCommentRoutes);
 
 // Figma連携（追加のレート制限）
 app.use('/api/figma', figmaApiRateLimiter, figmaRoutes);
+
+// 自動修正（AutoFix）機能
+app.use('/api/autofix', autofixRoutes);
 
 // HTML生成機能
 app.use('/api/html', htmlRoutes);
