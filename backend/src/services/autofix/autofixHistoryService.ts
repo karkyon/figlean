@@ -1,10 +1,10 @@
 // =====================================
-// ファイルパス: backend/src/services/autofixHistoryService.ts
+// ファイルパス: backend/src/services/autofix/autofixHistoryService.ts
 // 概要: AutoFix履歴管理サービス
 // 機能説明: 修正履歴の取得、Rollback処理
 // 作成日: 2026-01-17
 // 更新日: 2026-01-17
-// 更新理由: 新規作成
+// 更新理由: TypeScriptエラー完全修正
 // 依存関係: PrismaClient, figmaApiService, types/autofix, utils/logger
 // =====================================
 
@@ -16,7 +16,6 @@ import {
   AutoFixRollbackRequestDto,
   AutoFixRollbackResponseDto,
   AutoFixStatus,
-  AutoFixItemResult,
 } from '../../types/autofix';
 import { modifyFigmaNodes } from '../../utils/figmaModifier';
 import logger from '../../utils/logger';
@@ -261,7 +260,7 @@ export async function rollbackAutoFix(
         .filter((item) => item.status === AutoFixStatus.COMPLETED)
         .map((item) => ({
           nodeId: item.figmaNodeId,
-          properties: item.beforeValue,
+          properties: item.beforeValue as Record<string, any>,
         }));
 
       if (rollbackUpdates.length > 0) {
@@ -284,14 +283,23 @@ export async function rollbackAutoFix(
       });
 
       // プロジェクトスコアを元に戻す
+      const currentProjectScore = history.project.figleanScore ?? 0;
       const newScore = Math.max(0, history.beforeScore);
+      const scoreRevertDelta = newScore - currentProjectScore;
+      
       await prisma.project.update({
         where: { id: history.projectId },
         data: { figleanScore: newScore },
       });
 
       successHistories.push(historyId);
-      logger.info('Rollback成功', { historyId });
+      logger.info('Rollback成功', { 
+        historyId,
+        currentScore: currentProjectScore,
+        revertedScore: newScore,
+        scoreDelta: scoreRevertDelta,
+        itemsRolledBack: rollbackUpdates.length,
+      });
     } catch (error: any) {
       logger.error('Rollback失敗', { historyId, error });
       failedHistories.push({
@@ -318,7 +326,16 @@ export async function rollbackAutoFix(
   logger.info('AutoFix Rollback完了', {
     successCount: successHistories.length,
     failedCount: failedHistories.length,
+    currentScore,
   });
+
+  const successMessage = successHistories.length === 1
+    ? '1件のロールバックが完了しました。'
+    : `${successHistories.length}件のロールバックが完了しました。`;
+
+  const failureMessage = failedHistories.length > 0
+    ? ` ${failedHistories.length}件は失敗しました。`
+    : '';
 
   return {
     successCount: successHistories.length,
@@ -326,6 +343,6 @@ export async function rollbackAutoFix(
     rolledBackHistories: successHistories,
     failedHistories,
     currentScore,
-    message: `${successHistories.length}件のロールバックが完了しました。`,
+    message: successMessage + failureMessage,
   };
 }

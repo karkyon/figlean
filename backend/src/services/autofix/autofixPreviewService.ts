@@ -1,10 +1,10 @@
 // =====================================
-// ファイルパス: backend/src/services/autofixPreviewService.ts
+// ファイルパス: backend/src/services/autofix/autofixPreviewService.ts
 // 概要: AutoFix修正プレビュー生成サービス
 // 機能説明: 違反項目から修正内容をプレビュー生成、スコア予測計算
 // 作成日: 2026-01-17
 // 更新日: 2026-01-17
-// 更新理由: 新規作成
+// 更新理由: TypeScriptエラー完全修正
 // 依存関係: PrismaClient, types/autofix, utils/logger
 // =====================================
 
@@ -63,7 +63,6 @@ export async function generatePreview(
       severity: true,
       frameName: true,
       frameId: true,
-      scoreImpact: true,
     },
   });
 
@@ -94,12 +93,11 @@ export async function generatePreview(
     }
   }
 
-  // 4. スコア予測計算
-  const totalScoreImpact = violations.reduce(
-    (sum, v) => sum + (v.scoreImpact || 0),
-    0
-  );
-  const expectedScore = Math.min(100, project.figleanScore + totalScoreImpact);
+  // 4. スコア予測計算（固定値として5点/違反と仮定）
+  const scoreImpactPerViolation = 5;
+  const totalScoreImpact = violations.length * scoreImpactPerViolation;
+  const currentScore = project.figleanScore ?? 0;
+  const expectedScore = Math.min(100, currentScore + totalScoreImpact);
 
   // 5. 推定実行時間計算（1修正あたり2秒と仮定）
   const estimatedTime = previewItems.length * 2;
@@ -115,7 +113,7 @@ export async function generatePreview(
     previewItems,
     totalCount: previewItems.length,
     estimatedTime,
-    beforeScore: project.figleanScore,
+    beforeScore: currentScore,
     expectedScore,
     scoreDelta: totalScoreImpact,
   };
@@ -267,7 +265,7 @@ function suggestSemanticName(currentName: string): string {
 // =====================================
 
 function generateFixDescription(mapping: ViolationToFixMapping): string {
-  const { fixType, frameName, beforeValue, afterValue } = mapping;
+  const { fixType, frameName, afterValue } = mapping;
 
   switch (fixType) {
     case AutoFixType.ADD_AUTO_LAYOUT:

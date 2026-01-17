@@ -4,8 +4,8 @@
 // 機能説明: AutoFix関連エンドポイントのハンドリング（ビジネスロジックなし）
 // 作成日: 2026-01-17
 // 更新日: 2026-01-17
-// 更新理由: 新規作成
-// 依存関係: Express, autofixサービス群, utils/response, utils/logger
+// 更新理由: TypeScriptエラー完全修正、他コントローラーと設計統一
+// 依存関係: Express, autofixサービス群, utils/logger, errors
 // =====================================
 
 import { Request, Response, NextFunction } from 'express';
@@ -13,8 +13,8 @@ import * as autofixPreviewService from '../services/autofix/autofixPreviewServic
 import * as autofixExecutorService from '../services/autofix/autofixExecutorService';
 import * as autofixHistoryService from '../services/autofix/autofixHistoryService';
 import * as autofixConfigService from '../services/autofix/autofixConfigService';
-import { sendSuccess, sendError } from '../utils/response';
 import logger from '../utils/logger';
+import { ValidationError } from '../errors';
 import {
   AutoFixPreviewRequestDto,
   AutoFixExecuteRequestDto,
@@ -27,12 +27,15 @@ import {
 // 型定義
 // =====================================
 
-interface AuthenticatedRequest extends Request {
-  user: {
-    userId: string;
-    email: string;
-    name: string;
-  };
+// =====================================
+// ユーザー認証チェックヘルパー
+// =====================================
+
+function getUserId(req: Request): string {
+  if (!req.user || !req.user.userId) {
+    throw new ValidationError('認証が必要です');
+  }
+  return req.user.userId;
 }
 
 // =====================================
@@ -44,16 +47,24 @@ interface AuthenticatedRequest extends Request {
  * AutoFix修正内容のプレビュー生成
  */
 export async function generatePreview(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
     const { projectId } = req.params;
-    const userId = req.user.userId;
+    const userId = getUserId(req);
     const requestBody: AutoFixPreviewRequestDto = req.body;
 
-    logger.info('AutoFixプレビュー要求', { projectId, userId, body: requestBody });
+    if (!projectId) {
+      throw new ValidationError('projectIdは必須です');
+    }
+
+    if (!requestBody.violationIds || requestBody.violationIds.length === 0) {
+      throw new ValidationError('violationIdsは必須です');
+    }
+
+    logger.info('AutoFixプレビュー要求', { projectId, userId, violationCount: requestBody.violationIds.length });
 
     const preview = await autofixPreviewService.generatePreview(
       projectId,
@@ -61,8 +72,11 @@ export async function generatePreview(
       requestBody
     );
 
-    sendSuccess(res, preview, 'AutoFix修正プレビューを生成しました', 200, req.id);
-  } catch (error: any) {
+    res.json({
+      success: true,
+      data: preview
+    });
+  } catch (error) {
     logger.error('AutoFixプレビュー生成エラー', { error, requestId: req.id });
     next(error);
   }
@@ -77,16 +91,24 @@ export async function generatePreview(
  * AutoFix修正実行
  */
 export async function executeAutoFix(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
     const { projectId } = req.params;
-    const userId = req.user.userId;
+    const userId = getUserId(req);
     const requestBody: AutoFixExecuteRequestDto = req.body;
 
-    logger.info('AutoFix実行要求', { projectId, userId, body: requestBody });
+    if (!projectId) {
+      throw new ValidationError('projectIdは必須です');
+    }
+
+    if (!requestBody.violationIds || requestBody.violationIds.length === 0) {
+      throw new ValidationError('violationIdsは必須です');
+    }
+
+    logger.info('AutoFix実行要求', { projectId, userId, violationCount: requestBody.violationIds.length });
 
     const result = await autofixExecutorService.executeAutoFix(
       projectId,
@@ -94,8 +116,11 @@ export async function executeAutoFix(
       requestBody
     );
 
-    sendSuccess(res, result, 'AutoFix修正を実行しました', 200, req.id);
-  } catch (error: any) {
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
     logger.error('AutoFix実行エラー', { error, requestId: req.id });
     next(error);
   }
@@ -110,14 +135,22 @@ export async function executeAutoFix(
  * 個別違反の修正実行
  */
 export async function executeIndividualFix(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
     const { projectId } = req.params;
-    const userId = req.user.userId;
+    const userId = getUserId(req);
     const { violationId, deleteComment } = req.body;
+
+    if (!projectId) {
+      throw new ValidationError('projectIdは必須です');
+    }
+
+    if (!violationId) {
+      throw new ValidationError('violationIdは必須です');
+    }
 
     logger.info('AutoFix個別実行要求', { projectId, userId, violationId });
 
@@ -126,8 +159,11 @@ export async function executeIndividualFix(
       deleteComments: deleteComment || false,
     });
 
-    sendSuccess(res, result, '個別修正を実行しました', 200, req.id);
-  } catch (error: any) {
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
     logger.error('AutoFix個別実行エラー', { error, requestId: req.id });
     next(error);
   }
@@ -142,13 +178,17 @@ export async function executeIndividualFix(
  * AutoFix実行履歴取得
  */
 export async function getHistories(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
     const { projectId } = req.params;
-    const userId = req.user.userId;
+    const userId = getUserId(req);
+
+    if (!projectId) {
+      throw new ValidationError('projectIdは必須です');
+    }
 
     const query: AutoFixHistoryListQuery = {
       projectId,
@@ -161,8 +201,11 @@ export async function getHistories(
 
     const histories = await autofixHistoryService.getAutoFixHistories(userId, query);
 
-    sendSuccess(res, histories, 'AutoFix履歴を取得しました', 200, req.id);
-  } catch (error: any) {
+    res.json({
+      success: true,
+      data: histories
+    });
+  } catch (error) {
     logger.error('AutoFix履歴取得エラー', { error, requestId: req.id });
     next(error);
   }
@@ -173,13 +216,17 @@ export async function getHistories(
  * AutoFix履歴詳細取得
  */
 export async function getHistoryDetail(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
     const { historyId } = req.params;
-    const userId = req.user.userId;
+    const userId = getUserId(req);
+
+    if (!historyId) {
+      throw new ValidationError('historyIdは必須です');
+    }
 
     logger.info('AutoFix履歴詳細取得要求', { historyId, userId });
 
@@ -188,8 +235,11 @@ export async function getHistoryDetail(
       userId
     );
 
-    sendSuccess(res, history, 'AutoFix履歴詳細を取得しました', 200, req.id);
-  } catch (error: any) {
+    res.json({
+      success: true,
+      data: history
+    });
+  } catch (error) {
     logger.error('AutoFix履歴詳細取得エラー', { error, requestId: req.id });
     next(error);
   }
@@ -204,20 +254,27 @@ export async function getHistoryDetail(
  * AutoFix修正のロールバック
  */
 export async function rollbackAutoFix(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    const userId = req.user.userId;
+    const userId = getUserId(req);
     const requestBody: AutoFixRollbackRequestDto = req.body;
 
-    logger.info('AutoFix Rollback要求', { userId, body: requestBody });
+    if (!requestBody.historyIds || requestBody.historyIds.length === 0) {
+      throw new ValidationError('historyIdsは必須です');
+    }
+
+    logger.info('AutoFix Rollback要求', { userId, historyCount: requestBody.historyIds.length });
 
     const result = await autofixHistoryService.rollbackAutoFix(userId, requestBody);
 
-    sendSuccess(res, result, 'AutoFix修正をロールバックしました', 200, req.id);
-  } catch (error: any) {
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
     logger.error('AutoFix Rollback エラー', { error, requestId: req.id });
     next(error);
   }
@@ -232,19 +289,22 @@ export async function rollbackAutoFix(
  * AutoFix設定取得
  */
 export async function getConfig(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    const userId = req.user.userId;
+    const userId = getUserId(req);
 
     logger.info('AutoFix設定取得要求', { userId });
 
     const config = await autofixConfigService.getAutoFixConfig(userId);
 
-    sendSuccess(res, config, 'AutoFix設定を取得しました', 200, req.id);
-  } catch (error: any) {
+    res.json({
+      success: true,
+      data: config
+    });
+  } catch (error) {
     logger.error('AutoFix設定取得エラー', { error, requestId: req.id });
     next(error);
   }
@@ -255,20 +315,23 @@ export async function getConfig(
  * AutoFix設定更新
  */
 export async function updateConfig(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    const userId = req.user.userId;
+    const userId = getUserId(req);
     const updateDto: UpdateAutoFixConfigDto = req.body;
 
-    logger.info('AutoFix設定更新要求', { userId, body: updateDto });
+    logger.info('AutoFix設定更新要求', { userId, updateKeys: Object.keys(updateDto) });
 
     const config = await autofixConfigService.updateAutoFixConfig(userId, updateDto);
 
-    sendSuccess(res, config, 'AutoFix設定を更新しました', 200, req.id);
-  } catch (error: any) {
+    res.json({
+      success: true,
+      data: config
+    });
+  } catch (error) {
     logger.error('AutoFix設定更新エラー', { error, requestId: req.id });
     next(error);
   }
@@ -279,20 +342,39 @@ export async function updateConfig(
  * AutoFix設定リセット
  */
 export async function resetConfig(
-  req: AuthenticatedRequest,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    const userId = req.user.userId;
+    const userId = getUserId(req);
 
     logger.info('AutoFix設定リセット要求', { userId });
 
     const config = await autofixConfigService.resetAutoFixConfig(userId);
 
-    sendSuccess(res, config, 'AutoFix設定をリセットしました', 200, req.id);
-  } catch (error: any) {
+    res.json({
+      success: true,
+      data: config
+    });
+  } catch (error) {
     logger.error('AutoFix設定リセットエラー', { error, requestId: req.id });
     next(error);
   }
 }
+
+// =====================================
+// エクスポート
+// =====================================
+
+export default {
+  generatePreview,
+  executeAutoFix,
+  executeIndividualFix,
+  getHistories,
+  getHistoryDetail,
+  rollbackAutoFix,
+  getConfig,
+  updateConfig,
+  resetConfig
+};

@@ -1,10 +1,10 @@
 // =====================================
-// ファイルパス: backend/src/services/autofixConfigService.ts
+// ファイルパス: backend/src/services/autofix/autofixConfigService.ts
 // 概要: AutoFix設定管理サービス
 // 機能説明: ユーザーごとの自動修正設定の取得・更新
 // 作成日: 2026-01-17
 // 更新日: 2026-01-17
-// 更新理由: 新規作成
+// 更新理由: TypeScriptエラー完全修正
 // 依存関係: PrismaClient, types/autofix, utils/logger
 // =====================================
 
@@ -90,7 +90,7 @@ export async function updateAutoFixConfig(
 
   if (!existingConfig) {
     // 新規作成
-    const newConfig = await prisma.autoFixConfig.create({
+    const created = await prisma.autoFixConfig.create({
       data: {
         userId,
         enableAutoLayout: update.enableAutoLayout ?? DEFAULT_CONFIG.enableAutoLayout,
@@ -103,16 +103,16 @@ export async function updateAutoFixConfig(
       },
     });
 
-    logger.info('AutoFix設定作成完了', { userId, configId: newConfig.id });
+    logger.info('AutoFix設定作成完了', { userId, configId: created.id });
 
     return {
-      enableAutoLayout: newConfig.enableAutoLayout,
-      enableSizeConstraint: newConfig.enableSizeConstraint,
-      enableNaming: newConfig.enableNaming,
-      enableComponent: newConfig.enableComponent,
-      enableStyle: newConfig.enableStyle,
-      enabledFixTypes: newConfig.enabledFixTypes as Record<AutoFixType, boolean>,
-      autoDeleteComments: newConfig.autoDeleteComments,
+      enableAutoLayout: created.enableAutoLayout,
+      enableSizeConstraint: created.enableSizeConstraint,
+      enableNaming: created.enableNaming,
+      enableComponent: created.enableComponent,
+      enableStyle: created.enableStyle,
+      enabledFixTypes: created.enabledFixTypes as Record<AutoFixType, boolean>,
+      autoDeleteComments: created.autoDeleteComments,
     };
   }
 
@@ -158,16 +158,24 @@ export async function resetAutoFixConfig(userId: string): Promise<AutoFixConfigD
   });
 
   // デフォルト設定で新規作成
-  const newConfig = await prisma.autoFixConfig.create({
+  const created = await prisma.autoFixConfig.create({
     data: {
       userId,
       ...DEFAULT_CONFIG,
     },
   });
 
-  logger.info('AutoFix設定リセット完了', { userId });
+  logger.info('AutoFix設定リセット完了', { userId, configId: created.id });
 
-  return DEFAULT_CONFIG;
+  return {
+    enableAutoLayout: created.enableAutoLayout,
+    enableSizeConstraint: created.enableSizeConstraint,
+    enableNaming: created.enableNaming,
+    enableComponent: created.enableComponent,
+    enableStyle: created.enableStyle,
+    enabledFixTypes: created.enabledFixTypes as Record<AutoFixType, boolean>,
+    autoDeleteComments: created.autoDeleteComments,
+  };
 }
 
 // =====================================

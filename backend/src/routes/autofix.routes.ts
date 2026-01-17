@@ -10,7 +10,7 @@
 
 import { Router } from 'express';
 import * as autofixController from '../controllers/autofixController';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken } from '../middlewares/authenticate';
 
 const router = Router();
 
@@ -62,7 +62,7 @@ router.use(authenticateToken());
  *                     autoDeleteComments:
  *                       type: boolean
  */
-router.get('/config', autofixController.getConfig);
+router.get('/config', authenticateToken(), autofixController.getConfig);
 
 /**
  * @openapi
@@ -98,7 +98,7 @@ router.get('/config', autofixController.getConfig);
  *       200:
  *         description: AutoFix設定更新成功
  */
-router.put('/config', autofixController.updateConfig);
+router.put('/config', authenticateToken(), autofixController.updateConfig);
 
 /**
  * @openapi
@@ -113,7 +113,7 @@ router.put('/config', autofixController.updateConfig);
  *       200:
  *         description: AutoFix設定リセット成功
  */
-router.post('/config/reset', autofixController.resetConfig);
+router.post('/config/reset', authenticateToken(), autofixController.resetConfig);
 
 // =====================================
 // AutoFix実行
@@ -158,7 +158,7 @@ router.post('/config/reset', autofixController.resetConfig);
  *       200:
  *         description: プレビュー生成成功
  */
-router.post('/:projectId/preview', autofixController.generatePreview);
+router.post('/:projectId/preview', authenticateToken(), autofixController.generatePreview);
 
 /**
  * @openapi
@@ -215,7 +215,7 @@ router.post('/:projectId/preview', autofixController.generatePreview);
  *       200:
  *         description: AutoFix実行成功
  */
-router.post('/:projectId/execute', autofixController.executeAutoFix);
+router.post('/:projectId/execute', authenticateToken(), autofixController.executeAutoFix);
 
 /**
  * @openapi
@@ -254,7 +254,7 @@ router.post('/:projectId/execute', autofixController.executeAutoFix);
  *       200:
  *         description: 個別修正実行成功
  */
-router.post('/:projectId/execute/individual', autofixController.executeIndividualFix);
+router.post('/:projectId/execute/individual', authenticateToken(), autofixController.executeIndividualFix);
 
 // =====================================
 // AutoFix履歴管理
@@ -300,7 +300,7 @@ router.post('/:projectId/execute/individual', autofixController.executeIndividua
  *       200:
  *         description: AutoFix履歴取得成功
  */
-router.get('/:projectId/history', autofixController.getHistories);
+router.get('/:projectId/history', authenticateToken(), autofixController.getHistories);
 
 /**
  * @openapi
@@ -322,7 +322,7 @@ router.get('/:projectId/history', autofixController.getHistories);
  *       200:
  *         description: AutoFix履歴詳細取得成功
  */
-router.get('/history/:historyId', autofixController.getHistoryDetail);
+router.get('/history/:historyId', authenticateToken(), autofixController.getHistoryDetail);
 
 /**
  * @openapi
@@ -352,6 +352,6 @@ router.get('/history/:historyId', autofixController.getHistoryDetail);
  *       200:
  *         description: Rollback実行成功
  */
-router.post('/rollback', autofixController.rollbackAutoFix);
+router.post('/rollback', authenticateToken(), autofixController.rollbackAutoFix);
 
 export default router;
