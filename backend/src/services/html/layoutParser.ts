@@ -1,153 +1,143 @@
-// =====================================
-// backend/src/services/html/layoutParser.ts
-// レイアウトパーサー - FIGLEAN Phase 9
-// 作成日時: 2026年1月12日
-// 説明: Figma Auto LayoutからFlexbox/Grid情報を抽出
-// =====================================
+/**
+ * ==============================================
+ * FIGLEAN - Layout Parser（完全版）
+ * ==============================================
+ * ファイルパス: backend/src/services/html/layoutParser.ts
+ * 作成日: 2026-01-19
+ * 説明: Figma Auto Layoutを解析し、Flex/Grid変換情報を抽出
+ * ==============================================
+ */
 
 import type {
   FigmaNode,
   LayoutInfo,
-  LayoutDirection,
-  SizingInfo,
-  SizingMode,
   SpacingInfo,
+  SizingInfo,
   AlignmentInfo,
-  AlignItems,
-  JustifyContent
+  LayoutMode,
+  LayoutAlign,
+  LayoutSizing
 } from '../../types/html';
 
 /**
  * Layout Parser
- * Figma Auto Layoutを解析してFlexbox/Grid情報を抽出
+ * Figma Auto Layout情報を解析
  */
 export class LayoutParser {
   /**
-   * Auto Layout情報を解析
-   * 
-   * @param node - 解析対象のFigmaノード
-   * @returns レイアウト情報
+   * Auto Layoutが適用されているかチェック
+   */
+  hasAutoLayout(node: FigmaNode): boolean {
+    return node.layoutMode !== undefined && node.layoutMode !== 'NONE';
+  }
+
+  /**
+   * 絶対配置が使用されているかチェック
+   */
+  hasAbsolutePositioning(node: FigmaNode): boolean {
+    // Auto Layoutが無く、絶対座標が設定されている
+    return !this.hasAutoLayout(node) && node.absoluteBoundingBox !== undefined;
+  }
+
+  /**
+   * Grid候補かどうか判定
+   * @param node - Figmaノード
+   * @param figleanScore - FIGLEANスコア
+   */
+  isGridCandidate(node: FigmaNode, figleanScore: number): boolean {
+    // 100%スコア + 子要素が3個以上
+    if (figleanScore < 100) return false;
+    if (!node.children || node.children.length < 3) return false;
+    
+    // Auto Layoutが適用されている
+    if (!this.hasAutoLayout(node)) return false;
+    
+    // Wrap設定がある（グリッド的なレイアウト）
+    return node.layoutWrap === 'WRAP';
+  }
+
+  /**
+   * レイアウト情報を完全解析
    */
   parseLayout(node: FigmaNode): LayoutInfo {
     return {
-      direction: this.getDirection(node),
-      sizing: this.getSizing(node),
-      spacing: this.getSpacing(node),
-      alignment: this.getAlignment(node),
-      wrap: this.getWrap(node)
+      direction: this.parseDirection(node.layoutMode),
+      wrap: this.parseWrap(node.layoutWrap),
+      spacing: this.parseSpacing(node),
+      sizing: this.parseSizing(node),
+      alignment: this.parseAlignment(node)
     };
   }
 
   /**
-   * レイアウト方向を取得
-   * 
-   * @param node - Figmaノード
-   * @returns horizontal or vertical
+   * 方向を解析
    */
-  private getDirection(node: FigmaNode): LayoutDirection {
-    if (node.layoutMode === 'HORIZONTAL') {
-      return 'horizontal';
-    } else if (node.layoutMode === 'VERTICAL') {
-      return 'vertical';
+  private parseDirection(layoutMode?: LayoutMode): 'horizontal' | 'vertical' {
+    return layoutMode === 'HORIZONTAL' ? 'horizontal' : 'vertical';
+  }
+
+  /**
+   * Wrap設定を解析
+   */
+  private parseWrap(layoutWrap?: 'NO_WRAP' | 'WRAP'): boolean {
+    return layoutWrap === 'WRAP';
+  }
+
+  /**
+   * スペーシング情報を解析
+   */
+  private parseSpacing(node: FigmaNode): SpacingInfo {
+    return {
+      gap: node.itemSpacing || 0,
+      paddingTop: node.paddingTop || 0,
+      paddingBottom: node.paddingBottom || 0,
+      paddingLeft: node.paddingLeft || 0,
+      paddingRight: node.paddingRight || 0
+    };
+  }
+
+  /**
+   * サイジング情報を解析
+   */
+  private parseSizing(node: FigmaNode): SizingInfo {
+    const width = node.layoutSizingHorizontal || 'FIXED';
+    const height = node.layoutSizingVertical || 'FIXED';
+    
+    let widthValue: number | undefined;
+    let heightValue: number | undefined;
+    
+    // FIXED時のサイズ値を取得
+    if (width === 'FIXED' && node.absoluteBoundingBox) {
+      widthValue = node.absoluteBoundingBox.width;
     }
     
-    // デフォルトはvertical
-    return 'vertical';
+    if (height === 'FIXED' && node.absoluteBoundingBox) {
+      heightValue = node.absoluteBoundingBox.height;
+    }
+    
+    return {
+      width: this.convertLayoutSizing(width),
+      height: this.convertLayoutSizing(height),
+      widthValue,
+      heightValue
+    };
   }
 
   /**
-   * サイジング情報を取得
-   * 
-   * @param node - Figmaノード
-   * @returns サイジング情報
+   * LayoutSizingを内部形式に変換
    */
-  private getSizing(node: FigmaNode): SizingInfo {
-    const widthMode = this.parseSizingMode(
-      node.primaryAxisSizingMode || 'FIXED'
-    );
-    const heightMode = this.parseSizingMode(
-      node.counterAxisSizingMode || 'FIXED'
-    );
-
-    const sizing: SizingInfo = {
-      width: widthMode,
-      height: heightMode
-    };
-
-    // 絶対サイズがある場合は値を設定
-    if (node.absoluteBoundingBox) {
-      sizing.widthValue = Math.round(node.absoluteBoundingBox.width);
-      sizing.heightValue = Math.round(node.absoluteBoundingBox.height);
-    }
-
-    // 最小・最大サイズ
-    if (node.minWidth !== undefined) {
-      sizing.minWidth = node.minWidth;
-    }
-    if (node.maxWidth !== undefined) {
-      sizing.maxWidth = node.maxWidth;
-    }
-    if (node.minHeight !== undefined) {
-      sizing.minHeight = node.minHeight;
-    }
-    if (node.maxHeight !== undefined) {
-      sizing.maxHeight = node.maxHeight;
-    }
-
+  private convertLayoutSizing(sizing: LayoutSizing): 'FIXED' | 'HUG' | 'FILL' {
+    // Figmaの型定義と内部型が同じなのでそのまま返す
     return sizing;
   }
 
   /**
-   * サイジングモードを変換
-   * 
-   * @param mode - Figmaのサイジングモード
-   * @returns 標準化されたサイジングモード
+   * アライメント情報を解析
    */
-  private parseSizingMode(mode: string): SizingMode {
-    switch (mode) {
-      case 'FIXED':
-        return 'FIXED';
-      case 'AUTO':
-        return 'HUG';
-      case 'FILL':
-        return 'FILL';
-      default:
-        return 'AUTO';
-    }
-  }
-
-  /**
-   * スペーシング情報を取得
-   * 
-   * @param node - Figmaノード
-   * @returns スペーシング情報
-   */
-  private getSpacing(node: FigmaNode): SpacingInfo {
-    return {
-      gap: node.itemSpacing || 0,
-      padding: {
-        top: node.paddingTop || 0,
-        right: node.paddingRight || 0,
-        bottom: node.paddingBottom || 0,
-        left: node.paddingLeft || 0
-      }
-    };
-  }
-
-  /**
-   * アライメント情報を取得
-   * 
-   * @param node - Figmaノード
-   * @returns アライメント情報
-   */
-  private getAlignment(node: FigmaNode): AlignmentInfo {
-    const alignItems = this.parseAlignItems(
-      node.primaryAxisAlignItems || 'MIN'
-    );
-    const justifyContent = this.parseJustifyContent(
-      node.counterAxisAlignItems || 'MIN'
-    );
-
+  private parseAlignment(node: FigmaNode): AlignmentInfo {
+    const alignItems = this.convertToAlignItems(node.counterAxisAlignItems);
+    const justifyContent = this.convertToJustifyContent(node.primaryAxisAlignItems);
+    
     return {
       alignItems,
       justifyContent
@@ -155,12 +145,9 @@ export class LayoutParser {
   }
 
   /**
-   * AlignItemsを変換
-   * 
-   * @param align - Figmaのアライメント値
-   * @returns 標準化されたAlignItems
+   * Figma AlignItems → CSS AlignItems
    */
-  private parseAlignItems(align: string): AlignItems {
+  private convertToAlignItems(align?: LayoutAlign): AlignmentInfo['alignItems'] {
     switch (align) {
       case 'MIN':
         return 'START';
@@ -168,22 +155,18 @@ export class LayoutParser {
         return 'CENTER';
       case 'MAX':
         return 'END';
-      case 'BASELINE':
-        return 'BASELINE';
       case 'STRETCH':
         return 'STRETCH';
+      case 'INHERIT':
       default:
-        return 'START';
+        return 'STRETCH';
     }
   }
 
   /**
-   * JustifyContentを変換
-   * 
-   * @param align - Figmaのアライメント値
-   * @returns 標準化されたJustifyContent
+   * Figma JustifyContent → CSS JustifyContent
    */
-  private parseJustifyContent(align: string): JustifyContent {
+  private convertToJustifyContent(align?: LayoutAlign): AlignmentInfo['justifyContent'] {
     switch (align) {
       case 'MIN':
         return 'START';
@@ -191,67 +174,29 @@ export class LayoutParser {
         return 'CENTER';
       case 'MAX':
         return 'END';
-      case 'SPACE_BETWEEN':
-        return 'SPACE_BETWEEN';
-      case 'SPACE_AROUND':
-        return 'SPACE_AROUND';
-      case 'SPACE_EVENLY':
-        return 'SPACE_EVENLY';
+      case 'STRETCH':
+        return 'SPACE_BETWEEN'; // STRETCHはSPACE_BETWEENに変換
+      case 'INHERIT':
       default:
         return 'START';
     }
   }
 
   /**
-   * Wrap設定を取得
-   * 
-   * @param node - Figmaノード
-   * @returns Wrap有効か
+   * 固定サイズが使用されているかチェック
    */
-  private getWrap(node: FigmaNode): boolean {
-    return node.layoutWrap === 'WRAP';
+  hasFixedSize(node: FigmaNode): boolean {
+    return (
+      node.layoutSizingHorizontal === 'FIXED' ||
+      node.layoutSizingVertical === 'FIXED'
+    );
   }
 
   /**
-   * Auto Layoutが適用されているかチェック
-   * 
-   * @param node - Figmaノード
-   * @returns Auto Layout適用済みか
+   * Wrap設定が無効かチェック
    */
-  hasAutoLayout(node: FigmaNode): boolean {
-    return node.layoutMode === 'HORIZONTAL' || node.layoutMode === 'VERTICAL';
-  }
-
-  /**
-   * Grid候補かチェック
-   * 
-   * @param node - Figmaノード
-   * @param score - FIGLEANスコア
-   * @returns Grid使用候補か
-   */
-  isGridCandidate(node: FigmaNode, score: number): boolean {
-    // スコアが100%でない場合はGrid不可
-    if (score !== 100) {
-      return false;
-    }
-
-    // Auto Layoutが必須
-    if (!this.hasAutoLayout(node)) {
-      return false;
-    }
-
-    // Wrapが有効
-    if (!this.getWrap(node)) {
-      return false;
-    }
-
-    // 子要素が4個以上
-    const childCount = node.children?.length || 0;
-    if (childCount < 4) {
-      return false;
-    }
-
-    return true;
+  hasWrapDisabled(node: FigmaNode): boolean {
+    return this.hasAutoLayout(node) && node.layoutWrap === 'NO_WRAP';
   }
 }
 

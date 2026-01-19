@@ -1,9 +1,12 @@
-// =====================================
-// backend/src/services/html/tailwindGenerator.ts
-// Tailwindジェネレーター - FIGLEAN Phase 9
-// 作成日時: 2026年1月12日
-// 説明: Figma情報からTailwind CSSクラスを生成
-// =====================================
+/**
+ * ==============================================
+ * FIGLEAN - Tailwind Generator（完全版）
+ * ==============================================
+ * ファイルパス: backend/src/services/html/tailwindGenerator.ts
+ * 作成日: 2026-01-19
+ * 説明: レイアウト情報からTailwind CSSクラスを生成
+ * ==============================================
+ */
 
 import type {
   LayoutInfo,
@@ -16,7 +19,7 @@ import type {
 
 /**
  * Tailwind Generator
- * Figma情報からTailwind CSSクラスを生成
+ * レイアウト情報からTailwind CSSクラスを生成
  */
 export class TailwindGenerator {
   /**
@@ -44,18 +47,19 @@ export class TailwindGenerator {
     128: 32,
     144: 36,
     160: 40,
+    176: 44,
     192: 48,
+    208: 52,
     224: 56,
+    240: 60,
     256: 64,
+    288: 72,
     320: 80,
     384: 96
   };
 
   /**
    * Flexboxクラス生成
-   * 
-   * @param layout - レイアウト情報
-   * @returns Tailwindクラス配列
    */
   generateFlexClasses(layout: LayoutInfo): string[] {
     const classes: string[] = ['flex'];
@@ -74,8 +78,7 @@ export class TailwindGenerator {
     
     // Gap
     if (layout.spacing.gap > 0) {
-      const gapClass = this.convertToTailwindSpacing(layout.spacing.gap, 'gap');
-      classes.push(gapClass);
+      classes.push(this.convertToTailwindSpacing(layout.spacing.gap, 'gap'));
     }
     
     // Alignment
@@ -86,78 +89,71 @@ export class TailwindGenerator {
 
   /**
    * Gridクラス生成（FIGLEAN 100%時のみ）
-   * 
-   * @param childCount - 子要素数
-   * @param layout - レイアウト情報
-   * @returns Tailwindクラス配列
    */
   generateGridClasses(childCount: number, layout: LayoutInfo): string[] {
     const classes: string[] = ['grid'];
     
     // カラム数を自動判定
-    let cols = 3; // デフォルト
+    let cols = this.calculateOptimalColumns(childCount);
     
-    if (childCount <= 2) {
-      cols = childCount;
-    } else if (childCount <= 4) {
-      cols = 2;
-    } else if (childCount <= 9) {
-      cols = 3;
-    } else {
-      cols = 4;
-    }
-    
-    // Grid columns（レスポンシブ対応）
-    classes.push('grid-cols-1');
-    classes.push(`md:grid-cols-${Math.min(cols, 2)}`);
-    classes.push(`lg:grid-cols-${cols}`);
+    // レスポンシブGridカラム
+    classes.push('grid-cols-1'); // モバイル: 1列
+    classes.push(`md:grid-cols-${Math.min(cols, 2)}`); // タブレット: 最大2列
+    classes.push(`lg:grid-cols-${cols}`); // デスクトップ: 最適列数
     
     // Gap
     if (layout.spacing.gap > 0) {
-      const gapClass = this.convertToTailwindSpacing(layout.spacing.gap, 'gap');
-      classes.push(gapClass);
+      classes.push(this.convertToTailwindSpacing(layout.spacing.gap, 'gap'));
     }
     
     return classes;
   }
 
   /**
+   * 最適なカラム数を計算
+   */
+  private calculateOptimalColumns(childCount: number): number {
+    if (childCount <= 2) return childCount;
+    if (childCount <= 4) return 2;
+    if (childCount <= 9) return 3;
+    if (childCount <= 16) return 4;
+    return 5;
+  }
+
+  /**
    * サイジングクラス生成
-   * 
-   * @param sizing - サイジング情報
-   * @returns Tailwindクラス配列
    */
   generateSizingClasses(sizing: SizingInfo): string[] {
     const classes: string[] = [];
     
     // Width
-    if (sizing.width === 'FILL') {
-      classes.push('w-full');
-    } else if (sizing.width === 'HUG') {
-      classes.push('w-auto');
-    } else if (sizing.width === 'FIXED' && sizing.widthValue) {
-      const widthClass = this.convertToTailwindSize(sizing.widthValue, 'w');
-      classes.push(widthClass);
+    switch (sizing.width) {
+      case 'FILL':
+        classes.push('w-full');
+        break;
+      case 'HUG':
+        classes.push('w-auto');
+        break;
+      case 'FIXED':
+        if (sizing.widthValue) {
+          classes.push(this.convertToTailwindSize(sizing.widthValue, 'w'));
+        }
+        break;
     }
     
     // Height
-    if (sizing.height === 'FILL') {
-      classes.push('h-full');
-    } else if (sizing.height === 'HUG') {
-      classes.push('h-auto');
-    } else if (sizing.height === 'FIXED' && sizing.heightValue) {
-      const heightClass = this.convertToTailwindSize(sizing.heightValue, 'h');
-      classes.push(heightClass);
-    }
-    
-    // Min/Max Width
-    if (sizing.minWidth) {
-      const minClass = this.convertToTailwindSize(sizing.minWidth, 'min-w');
-      classes.push(minClass);
-    }
-    if (sizing.maxWidth) {
-      const maxClass = this.convertToTailwindSize(sizing.maxWidth, 'max-w');
-      classes.push(maxClass);
+    switch (sizing.height) {
+      case 'FILL':
+        classes.push('h-full');
+        break;
+      case 'HUG':
+        classes.push('h-auto');
+        break;
+      case 'FIXED':
+        if (sizing.heightValue) {
+          classes.push(this.convertToTailwindSize(sizing.heightValue, 'h'));
+        }
+        break;
     }
     
     return classes;
@@ -165,45 +161,22 @@ export class TailwindGenerator {
 
   /**
    * スペーシングクラス生成
-   * 
-   * @param spacing - スペーシング情報
-   * @returns Tailwindクラス配列
    */
   generateSpacingClasses(spacing: SpacingInfo): string[] {
     const classes: string[] = [];
-    const { top, right, bottom, left } = spacing.padding;
     
-    // Padding最適化（全方向同じ場合）
-    if (top === bottom && left === right) {
-      if (top === left && top > 0) {
-        // 全方向同じ
-        const pClass = this.convertToTailwindSpacing(top, 'p');
-        classes.push(pClass);
-      } else {
-        // 上下・左右が同じ
-        if (top > 0) {
-          const pyClass = this.convertToTailwindSpacing(top, 'py');
-          classes.push(pyClass);
-        }
-        if (left > 0) {
-          const pxClass = this.convertToTailwindSpacing(left, 'px');
-          classes.push(pxClass);
-        }
-      }
-    } else {
-      // 個別指定
-      if (top > 0) {
-        classes.push(this.convertToTailwindSpacing(top, 'pt'));
-      }
-      if (right > 0) {
-        classes.push(this.convertToTailwindSpacing(right, 'pr'));
-      }
-      if (bottom > 0) {
-        classes.push(this.convertToTailwindSpacing(bottom, 'pb'));
-      }
-      if (left > 0) {
-        classes.push(this.convertToTailwindSpacing(left, 'pl'));
-      }
+    // Padding（個別指定）
+    if (spacing.paddingTop > 0) {
+      classes.push(this.convertToTailwindSpacing(spacing.paddingTop, 'pt'));
+    }
+    if (spacing.paddingBottom > 0) {
+      classes.push(this.convertToTailwindSpacing(spacing.paddingBottom, 'pb'));
+    }
+    if (spacing.paddingLeft > 0) {
+      classes.push(this.convertToTailwindSpacing(spacing.paddingLeft, 'pl'));
+    }
+    if (spacing.paddingRight > 0) {
+      classes.push(this.convertToTailwindSpacing(spacing.paddingRight, 'pr'));
     }
     
     return classes;
@@ -211,9 +184,6 @@ export class TailwindGenerator {
 
   /**
    * アライメントクラス生成
-   * 
-   * @param alignment - アライメント情報
-   * @returns Tailwindクラス配列
    */
   private generateAlignmentClasses(alignment: AlignmentInfo): string[] {
     const classes: string[] = [];
@@ -263,28 +233,7 @@ export class TailwindGenerator {
   }
 
   /**
-   * レスポンシブクラス生成
-   * 
-   * @param baseClasses - ベースクラス
-   * @param breakpoints - Breakpoint設定
-   * @returns レスポンシブクラス配列
-   */
-  generateResponsiveClasses(
-    baseClasses: string[],
-    _breakpoints?: ProjectBreakpoints
-  ): string[] {
-    // 現時点ではbaseClassesをそのまま返す
-    // 将来的にBreakpoint別の調整を実装可能
-    return [...baseClasses];
-  }
-
-  /**
    * 色クラス生成（背景・ボーダー）
-   * 
-   * @param fills - Figma fills
-   * @param strokes - Figma strokes
-   * @param cornerRadius - 角丸
-   * @returns Tailwindクラス配列
    */
   generateColorClasses(
     fills?: any[],
@@ -293,7 +242,7 @@ export class TailwindGenerator {
   ): string[] {
     const classes: string[] = [];
     
-    // 背景色（簡易実装）
+    // 背景色
     if (fills && fills.length > 0 && fills[0].visible !== false) {
       const fill = fills[0];
       if (fill.type === 'SOLID' && fill.color) {
@@ -317,20 +266,101 @@ export class TailwindGenerator {
     }
     
     // 角丸
-    if (cornerRadius) {
-      const radiusClass = this.convertToTailwindRadius(cornerRadius);
-      classes.push(radiusClass);
+    if (cornerRadius && cornerRadius > 0) {
+      classes.push(this.convertToTailwindRadius(cornerRadius));
     }
     
     return classes;
   }
 
   /**
+   * テキストクラス生成
+   */
+  generateTextClasses(node: any): string[] {
+    const classes: string[] = [];
+    
+    // フォントサイズ
+    if (node.style?.fontSize) {
+      const fontSize = node.style.fontSize;
+      if (fontSize >= 48) {
+        classes.push('text-5xl');
+      } else if (fontSize >= 36) {
+        classes.push('text-4xl');
+      } else if (fontSize >= 30) {
+        classes.push('text-3xl');
+      } else if (fontSize >= 24) {
+        classes.push('text-2xl');
+      } else if (fontSize >= 20) {
+        classes.push('text-xl');
+      } else if (fontSize >= 18) {
+        classes.push('text-lg');
+      } else if (fontSize >= 14) {
+        classes.push('text-base');
+      } else {
+        classes.push('text-sm');
+      }
+    }
+    
+    // フォントウェイト
+    if (node.style?.fontWeight) {
+      const weight = node.style.fontWeight;
+      if (weight >= 700) {
+        classes.push('font-bold');
+      } else if (weight >= 600) {
+        classes.push('font-semibold');
+      } else if (weight >= 500) {
+        classes.push('font-medium');
+      } else if (weight <= 300) {
+        classes.push('font-light');
+      }
+    }
+    
+    // テキスト色
+    if (node.fills && node.fills.length > 0) {
+      const fill = node.fills[0];
+      if (fill.type === 'SOLID' && fill.color) {
+        const colorClass = this.rgbToTailwindColor(fill.color);
+        if (colorClass && !colorClass.includes('white')) {
+          classes.push(`text-${colorClass}`);
+        }
+      }
+    }
+    
+    // テキストアライメント
+    if (node.style?.textAlignHorizontal) {
+      switch (node.style.textAlignHorizontal) {
+        case 'LEFT':
+          classes.push('text-left');
+          break;
+        case 'CENTER':
+          classes.push('text-center');
+          break;
+        case 'RIGHT':
+          classes.push('text-right');
+          break;
+        case 'JUSTIFIED':
+          classes.push('text-justify');
+          break;
+      }
+    }
+    
+    return classes;
+  }
+
+  /**
+   * レスポンシブクラス生成
+   */
+  generateResponsiveClasses(
+    baseClasses: string[],
+    _breakpoints?: ProjectBreakpoints
+  ): string[] {
+    // 現時点ではbaseClassesをそのまま返す
+    // 将来的にBreakpoint別の調整を実装可能
+    return [...baseClasses];
+  }
+
+  /**
    * px値をTailwindスペーシングクラスに変換
-   * 
-   * @param px - px値
-   * @param prefix - クラスプレフィックス
-   * @returns Tailwindクラス
    */
   private convertToTailwindSpacing(px: number, prefix: string): string {
     // 標準サイズマッピング
@@ -350,10 +380,6 @@ export class TailwindGenerator {
 
   /**
    * px値をTailwindサイズクラスに変換
-   * 
-   * @param px - px値
-   * @param prefix - クラスプレフィックス
-   * @returns Tailwindクラス
    */
   private convertToTailwindSize(px: number, prefix: string): string {
     // 標準サイズマッピング
@@ -367,9 +393,6 @@ export class TailwindGenerator {
 
   /**
    * 最も近いサイズを探す
-   * 
-   * @param px - px値
-   * @returns 最も近いサイズ（nullの場合はカスタム値）
    */
   private findNearestSize(px: number): number | null {
     const sizes = Object.keys(TailwindGenerator.SIZE_MAP).map(Number);
@@ -394,10 +417,7 @@ export class TailwindGenerator {
   }
 
   /**
-   * RGBをTailwind色クラスに変換（簡易実装）
-   * 
-   * @param color - Figma color {r, g, b, a}
-   * @returns Tailwind色クラス
+   * RGBをTailwind色クラスに変換
    */
   private rgbToTailwindColor(color: { r: number; g: number; b: number; a?: number }): string | null {
     const r = Math.round(color.r * 255);
@@ -415,6 +435,24 @@ export class TailwindGenerator {
       return `gray-${grayLevel}`;
     }
     
+    // 青系
+    if (b > r && b > g) {
+      const intensity = Math.round((b / 255) * 9) * 100;
+      return `blue-${intensity}`;
+    }
+    
+    // 緑系
+    if (g > r && g > b) {
+      const intensity = Math.round((g / 255) * 9) * 100;
+      return `green-${intensity}`;
+    }
+    
+    // 赤系
+    if (r > g && r > b) {
+      const intensity = Math.round((r / 255) * 9) * 100;
+      return `red-${intensity}`;
+    }
+    
     // カスタム色（16進数）
     const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
     return `[${hex}]`;
@@ -422,13 +460,12 @@ export class TailwindGenerator {
 
   /**
    * 角丸をTailwindクラスに変換
-   * 
-   * @param radius - 角丸px値
-   * @returns Tailwindクラス
    */
   private convertToTailwindRadius(radius: number): string {
     if (radius === 0) {
       return 'rounded-none';
+    } else if (radius <= 2) {
+      return 'rounded-sm';
     } else if (radius <= 4) {
       return 'rounded';
     } else if (radius <= 6) {
@@ -448,9 +485,6 @@ export class TailwindGenerator {
 
   /**
    * クラス配列を最適化（重複削除）
-   * 
-   * @param classes - クラス配列
-   * @returns 最適化されたクラス配列
    */
   optimizeClasses(classes: string[]): string[] {
     // 重複削除

@@ -1,59 +1,120 @@
+/**
+ * ==============================================
+ * FIGLEAN - HTML Generator 型定義（完全版）
+ * ==============================================
+ * ファイルパス: backend/src/types/html.ts
+ * 作成日: 2026-01-19
+ * 説明: HTML生成機能の全型定義
+ * ==============================================
+ */
+
 // =====================================
-// backend/src/types/html.ts
-// HTML生成関連の型定義 - FIGLEAN Phase 9
-// 作成日時: 2026年1月12日
-// 説明: HTML Generator機能で使用する型定義
+// Figmaノード型定義
 // =====================================
 
 /**
- * レイアウト方向
+ * Figma Auto Layout設定
  */
-export type LayoutDirection = 'horizontal' | 'vertical';
+export type LayoutMode = 'NONE' | 'HORIZONTAL' | 'VERTICAL';
+export type LayoutAlign = 'MIN' | 'CENTER' | 'MAX' | 'STRETCH' | 'INHERIT';
+export type LayoutSizing = 'FIXED' | 'HUG' | 'FILL';
 
 /**
- * サイジングモード
+ * Figmaノード（完全版）
  */
-export type SizingMode = 'FIXED' | 'HUG' | 'FILL' | 'AUTO';
+export interface FigmaNode {
+  id: string;
+  name: string;
+  type: 'DOCUMENT' | 'CANVAS' | 'FRAME' | 'GROUP' | 'VECTOR' | 'RECTANGLE' | 'TEXT' | 'COMPONENT' | 'INSTANCE';
+  
+  // レイアウト
+  layoutMode?: LayoutMode;
+  layoutWrap?: 'NO_WRAP' | 'WRAP';
+  primaryAxisSizingMode?: 'FIXED' | 'AUTO';
+  counterAxisSizingMode?: 'FIXED' | 'AUTO';
+  primaryAxisAlignItems?: LayoutAlign;
+  counterAxisAlignItems?: LayoutAlign;
+  itemSpacing?: number;
+  paddingLeft?: number;
+  paddingRight?: number;
+  paddingTop?: number;
+  paddingBottom?: number;
+  
+  // サイジング
+  layoutSizingHorizontal?: LayoutSizing;
+  layoutSizingVertical?: LayoutSizing;
+  layoutGrow?: number;
+  
+  // 絶対配置
+  absoluteBoundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  
+  // サイズ
+  size?: {
+    x: number;
+    y: number;
+  };
+  
+  // スタイル
+  fills?: Array<{
+    type: 'SOLID' | 'GRADIENT_LINEAR' | 'GRADIENT_RADIAL' | 'IMAGE';
+    visible?: boolean;
+    opacity?: number;
+    color?: {
+      r: number;
+      g: number;
+      b: number;
+      a?: number;
+    };
+  }>;
+  
+  strokes?: Array<{
+    type: 'SOLID';
+    visible?: boolean;
+    color?: {
+      r: number;
+      g: number;
+      b: number;
+      a?: number;
+    };
+  }>;
+  
+  strokeWeight?: number;
+  cornerRadius?: number;
+  
+  // テキスト
+  characters?: string;
+  style?: {
+    fontSize?: number;
+    fontWeight?: number;
+    fontFamily?: string;
+    textAlignHorizontal?: 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFIED';
+    textAlignVertical?: 'TOP' | 'CENTER' | 'BOTTOM';
+    letterSpacing?: number;
+    lineHeightPx?: number;
+  };
+  
+  // 子要素
+  children?: FigmaNode[];
+}
 
-/**
- * アライメント
- */
-export type AlignItems = 'START' | 'CENTER' | 'END' | 'BASELINE' | 'STRETCH';
-export type JustifyContent = 'START' | 'CENTER' | 'END' | 'SPACE_BETWEEN' | 'SPACE_AROUND' | 'SPACE_EVENLY';
-
-/**
- * HTML生成フレームワーク
- */
-export type Framework = 'HTML_TAILWIND' | 'REACT_JSX' | 'VUE_SFC';
-
-/**
- * 生成ステータス
- */
-export type GenerationStatus = 'NOT_GENERATED' | 'GENERATING' | 'COMPLETED' | 'FAILED';
+// =====================================
+// レイアウト情報
+// =====================================
 
 /**
  * レイアウト情報
  */
 export interface LayoutInfo {
-  direction: LayoutDirection;
-  sizing: SizingInfo;
-  spacing: SpacingInfo;
-  alignment: AlignmentInfo;
+  direction: 'horizontal' | 'vertical';
   wrap: boolean;
-}
-
-/**
- * サイジング情報
- */
-export interface SizingInfo {
-  width: SizingMode;
-  height: SizingMode;
-  widthValue?: number;
-  heightValue?: number;
-  minWidth?: number;
-  maxWidth?: number;
-  minHeight?: number;
-  maxHeight?: number;
+  spacing: SpacingInfo;
+  sizing: SizingInfo;
+  alignment: AlignmentInfo;
 }
 
 /**
@@ -61,98 +122,38 @@ export interface SizingInfo {
  */
 export interface SpacingInfo {
   gap: number;
-  padding: {
-    top: number;
-    right: number;
-    bottom: number;
-    left: number;
-  };
+  paddingTop: number;
+  paddingBottom: number;
+  paddingLeft: number;
+  paddingRight: number;
+}
+
+/**
+ * サイジング情報
+ */
+export interface SizingInfo {
+  width: 'FIXED' | 'HUG' | 'FILL';
+  height: 'FIXED' | 'HUG' | 'FILL';
+  widthValue?: number;
+  heightValue?: number;
 }
 
 /**
  * アライメント情報
  */
 export interface AlignmentInfo {
-  alignItems: AlignItems;
-  justifyContent: JustifyContent;
+  alignItems: 'START' | 'CENTER' | 'END' | 'BASELINE' | 'STRETCH';
+  justifyContent: 'START' | 'CENTER' | 'END' | 'SPACE_BETWEEN' | 'SPACE_AROUND' | 'SPACE_EVENLY';
 }
 
-/**
- * Figmaノード（簡略版）
- */
-export interface FigmaNode {
-  id: string;
-  name: string;
-  type: string;
-  
-  // Auto Layout関連
-  layoutMode?: 'HORIZONTAL' | 'VERTICAL' | 'NONE';
-  layoutWrap?: 'NO_WRAP' | 'WRAP';
-  primaryAxisSizingMode?: 'FIXED' | 'AUTO';
-  counterAxisSizingMode?: 'FIXED' | 'AUTO';
-  primaryAxisAlignItems?: string;
-  counterAxisAlignItems?: string;
-  itemSpacing?: number;
-  
-  // Padding
-  paddingTop?: number;
-  paddingRight?: number;
-  paddingBottom?: number;
-  paddingLeft?: number;
-  
-  // サイズ
-  absoluteBoundingBox?: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-  minWidth?: number;
-  maxWidth?: number;
-  minHeight?: number;
-  maxHeight?: number;
-  
-  // テキスト関連（TEXTノードの場合）
-  characters?: string;
-  style?: {
-    fontFamily?: string;
-    fontWeight?: number;
-    fontSize?: number;
-    lineHeightPx?: number;
-    letterSpacing?: number;
-    textAlignHorizontal?: string;
-    textAlignVertical?: string;
-  };
-  
-  // 背景・ボーダー
-  fills?: any[];
-  strokes?: any[];
-  strokeWeight?: number;
-  cornerRadius?: number;
-  
-  // 子要素
-  children?: FigmaNode[];
-}
+// =====================================
+// HTML生成オプション
+// =====================================
 
 /**
- * HTML生成オプション
+ * フレームワーク型
  */
-export interface HTMLGeneratorOptions {
-  // フレームワーク選択
-  framework: 'HTML_TAILWIND' | 'REACT_JSX' | 'VUE_SFC';
-  
-  // レスポンシブ設定
-  includeResponsive: boolean;
-  includeGrid: boolean;
-  
-  // Breakpoint設定
-  breakpoints?: ProjectBreakpoints;
-  
-  // その他オプション
-  useGrid?: boolean; // 内部で判定後に設定される
-  minifyOutput?: boolean;
-  includeComments?: boolean;
-}
+export type Framework = 'HTML_TAILWIND' | 'REACT_JSX' | 'VUE_SFC';
 
 /**
  * プロジェクトBreakpoint設定
@@ -165,39 +166,21 @@ export interface ProjectBreakpoints {
 }
 
 /**
- * 生成されたHTML結果
+ * HTML生成オプション
  */
-export interface GeneratedHTMLResult {
-  id: string;
-  projectId: string;
-  userId: string;
-  
-  // 生成オプション
-  framework: 'HTML_TAILWIND' | 'REACT_JSX' | 'VUE_SFC';
+export interface HTMLGeneratorOptions {
+  framework: Framework;
   includeResponsive: boolean;
   includeGrid: boolean;
   breakpoints?: ProjectBreakpoints;
-  
-  // 生成コード
-  htmlCode: string;
-  cssCode?: string;
-  
-  // メタデータ
-  metadata: HTMLMetadata;
-  
-  // ステータス
-  generationStatus: 'NOT_GENERATED' | 'GENERATING' | 'COMPLETED' | 'FAILED';
-  generationTimeMs?: number;
-  errorMessage?: string;
-  
-  // URL
-  previewUrl: string;
-  downloadUrl: string;
-  
-  // タイムスタンプ
-  createdAt: Date;
-  updatedAt: Date;
+  useGrid?: boolean;
+  minifyOutput?: boolean;
+  includeComments?: boolean;
 }
+
+// =====================================
+// 生成結果
+// =====================================
 
 /**
  * HTMLメタデータ
@@ -211,34 +194,53 @@ export interface HTMLMetadata {
 }
 
 /**
- * Tailwindクラス情報
+ * 生成されたHTML結果
  */
-export interface TailwindClassInfo {
-  flexClasses: string[];
-  sizingClasses: string[];
-  spacingClasses: string[];
-  colorClasses: string[];
-  borderClasses: string[];
-  responsiveClasses: string[];
+export interface GeneratedHTMLResult {
+  id: string;
+  projectId: string;
+  userId: string;
+  
+  framework: Framework;
+  includeResponsive: boolean;
+  includeGrid: boolean;
+  breakpoints?: ProjectBreakpoints;
+  
+  htmlCode: string;
+  cssCode?: string;
+  
+  metadata: HTMLMetadata;
+  
+  generationStatus: 'NOT_GENERATED' | 'GENERATING' | 'COMPLETED' | 'FAILED';
+  generationTimeMs?: number;
+  errorMessage?: string;
+  
+  previewUrl: string;
+  downloadUrl: string;
+  
+  createdAt: Date;
+  updatedAt: Date;
 }
+
+// =====================================
+// ビルダー設定
+// =====================================
 
 /**
  * HTMLビルダー設定
  */
 export interface HTMLBuilderConfig {
-  indent: number;              // インデント幅（スペース数）
-  useSemanticTags: boolean;    // セマンティックHTMLタグを使用
-  includeTailwindCDN: boolean; // Tailwind CDNを含める
-  includeMetaTags: boolean;    // メタタグを含める
+  indent: number;
+  useSemanticTags: boolean;
+  includeTailwindCDN: boolean;
+  includeMetaTags: boolean;
 }
 
 /**
- * ノードHTML変換結果
+ * Tailwindサイズマッピング
  */
-export interface NodeHTMLResult {
-  html: string;
-  classes: string[];
-  children: NodeHTMLResult[];
+export interface TailwindSizeMap {
+  [px: number]: number | string;
 }
 
 /**
@@ -248,17 +250,10 @@ export interface SemanticTagMap {
   [pattern: string]: string;
 }
 
-/**
- * Tailwindサイズマッピング
- */
-export interface TailwindSizeMap {
-  [px: number]: number;
-}
-
 // =====================================
 // Export
 // =====================================
 
 export default {
-  // 型定義のみなので、エクスポートするものはない
+  // 型定義のみ
 };

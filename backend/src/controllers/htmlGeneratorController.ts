@@ -6,17 +6,12 @@
 //   - Serviceレイヤーへの委譲
 //   - エラーハンドリング
 // 作成日: 2026-01-12
-// 更新日: 2026-01-16 - MVC/三層アーキテクチャ準拠に修正（Service分離）
-// 依存関係:
-//   - express
-//   - ../services/htmlGeneratorService
-//   - ../types/html
-//   - ../utils/logger
+// 更新日: 2026-01-19 - 型エラー修正
 // =====================================
 
 import { Request, Response, NextFunction } from 'express';
 import { getHTMLGeneratorService } from '../services/htmlGeneratorService';
-import type { HTMLGeneratorOptions } from '../types/html';
+import type { HTMLGeneratorOptions, FigmaNode } from '../types/html';
 import logger from '../utils/logger';
 import { ValidationError } from '../errors';
 
@@ -89,12 +84,12 @@ export async function generateHTMLController(
     // const figmaData = await getFigmaFileData(project.figmaFileKey, userId);
 
     // 現時点ではモックデータで動作確認
-    const mockFigmaData = {
+    const mockFigmaData: { document: FigmaNode } = {
       document: {
         id: '0:1',
         name: 'Page 1',
-        type: 'FRAME',
-        layoutMode: 'VERTICAL' as const,
+        type: 'FRAME',  // 型安全なリテラル
+        layoutMode: 'VERTICAL',
         children: []
       }
     };
@@ -143,7 +138,7 @@ export async function generateHTMLController(
   } catch (error) {
     logger.error('❌ [CONTROLLER] generateHTMLController エラー', {
       error,
-      requestId: req.id
+      requestId: (req as any).id
     });
 
     // バリデーションエラー（スコア不足など）
@@ -217,7 +212,7 @@ export async function getHTMLPreviewController(
   } catch (error) {
     logger.error('❌ [CONTROLLER] getHTMLPreviewController エラー', {
       error,
-      requestId: req.id
+      requestId: (req as any).id
     });
     next(error);
   }
@@ -257,8 +252,8 @@ export async function downloadHTMLController(
     const mockProjectName = 'figlean-project';
     const mockHTMLCode = '<!DOCTYPE html><html>...</html>';
 
-    // ZIPファイル生成（Serviceレイヤーに委譲）
-    const zipContent = await htmlGeneratorService.generateDownloadZip(
+    // HTML生成（Serviceレイヤーに委譲）
+    const htmlContent = await htmlGeneratorService.generateDownloadZip(
       mockHTMLCode,
       mockProjectName
     );
@@ -266,11 +261,11 @@ export async function downloadHTMLController(
     // 現時点ではHTMLファイルとして返す
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Content-Disposition', `attachment; filename="${mockProjectName}.html"`);
-    res.send(zipContent);
+    res.send(htmlContent);
   } catch (error) {
     logger.error('❌ [CONTROLLER] downloadHTMLController エラー', {
       error,
-      requestId: req.id
+      requestId: (req as any).id
     });
     next(error);
   }
@@ -294,47 +289,28 @@ export async function getHTMLHistoryController(
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
     const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
 
-    logger.info('🔵 [CONTROLLER] getHTMLHistoryController', {
-      projectId,
-      userId,
-      limit,
-      offset
-    });
+    logger.info('🔵 [CONTROLLER] getHTMLHistoryController', { projectId, userId, limit, offset });
 
     // TODO: 生成履歴を取得
     // const history = await prisma.generatedHTML.findMany({
     //   where: { projectId, userId },
     //   orderBy: { createdAt: 'desc' },
-    //   take: limit,
-    //   skip: offset
+    //   skip: offset,
+    //   take: limit
     // });
+
+    // TODO: 総数を取得
     // const total = await prisma.generatedHTML.count({
     //   where: { projectId, userId }
     // });
 
     // モックデータ
-    const mockHistory = [
-      {
-        id: '550e8400-e29b-41d4-a716-446655440000',
-        framework: 'HTML_TAILWIND',
-        generationStatus: 'COMPLETED',
-        metadata: {
-          totalLines: 245,
-          tailwindClasses: 128,
-          reproductionRate: 0.98,
-          codeQualityScore: 94
-        },
-        generationTimeMs: 1234,
-        createdAt: new Date().toISOString()
-      }
-    ];
-
     res.json({
       success: true,
       data: {
-        history: mockHistory,
+        history: [],
         pagination: {
-          total: mockHistory.length,
+          total: 0,
           limit,
           offset,
           hasMore: false
@@ -344,7 +320,7 @@ export async function getHTMLHistoryController(
   } catch (error) {
     logger.error('❌ [CONTROLLER] getHTMLHistoryController エラー', {
       error,
-      requestId: req.id
+      requestId: (req as any).id
     });
     next(error);
   }
@@ -352,7 +328,7 @@ export async function getHTMLHistoryController(
 
 // =====================================
 // DELETE /api/html/:generatedId
-// 削除
+// 生成済みHTML削除
 // =====================================
 
 export async function deleteGeneratedHTMLController(
@@ -366,45 +342,28 @@ export async function deleteGeneratedHTMLController(
 
     logger.info('🔵 [CONTROLLER] deleteGeneratedHTMLController', { generatedId, userId });
 
-    // TODO: 所有権確認と削除
-    // const generatedHTML = await prisma.generatedHTML.findUnique({
-    //   where: { id: generatedId }
+    // TODO: 削除
+    // const deleted = await prisma.generatedHTML.deleteMany({
+    //   where: {
+    //     id: generatedId,
+    //     userId
+    //   }
     // });
-    // if (!generatedHTML) {
-    //   res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '生成されたHTMLが見つかりません' }});
+    //
+    // if (deleted.count === 0) {
+    //   res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '指定されたHTMLが見つかりません' }});
     //   return;
     // }
-    // if (generatedHTML.userId !== userId) {
-    //   res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'この操作を実行する権限がありません' }});
-    //   return;
-    // }
-    // await prisma.generatedHTML.delete({
-    //   where: { id: generatedId }
-    // });
-
-    logger.info('✅ [CONTROLLER] 生成HTML削除成功', { generatedId });
 
     res.json({
       success: true,
-      message: '生成されたHTMLを削除しました'
+      message: '削除しました'
     });
   } catch (error) {
     logger.error('❌ [CONTROLLER] deleteGeneratedHTMLController エラー', {
       error,
-      requestId: req.id
+      requestId: (req as any).id
     });
     next(error);
   }
 }
-
-// =====================================
-// Export
-// =====================================
-
-export default {
-  generateHTMLController,
-  getHTMLPreviewController,
-  downloadHTMLController,
-  getHTMLHistoryController,
-  deleteGeneratedHTMLController
-};

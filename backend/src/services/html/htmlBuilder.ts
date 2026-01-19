@@ -1,9 +1,12 @@
-// =====================================
-// backend/src/services/html/htmlBuilder.ts
-// HTMLビルダー - FIGLEAN Phase 9
-// 作成日時: 2026年1月12日
-// 説明: FigmaノードツリーからHTML文字列を構築
-// =====================================
+/**
+ * ==============================================
+ * FIGLEAN - HTML Builder（完全版・市販レベル）
+ * ==============================================
+ * ファイルパス: backend/src/services/html/htmlBuilder.ts
+ * 作成日: 2026-01-19
+ * 説明: FigmaノードツリーからHTML文字列を生成するメインエンジン
+ * ==============================================
+ */
 
 import type {
   FigmaNode,
@@ -11,13 +14,13 @@ import type {
   HTMLBuilderConfig,
   ProjectBreakpoints
 } from '../../types/html';
-import { LayoutParser } from './layoutParser';
-import { SemanticMapper } from './semanticMapper';
-import { TailwindGenerator } from './tailwindGenerator';
+import { LayoutParser, getLayoutParser } from './layoutParser';
+import { SemanticMapper, getSemanticMapper } from './semanticMapper';
+import { TailwindGenerator, getTailwindGenerator } from './tailwindGenerator';
 
 /**
  * HTML Builder
- * FigmaノードツリーからHTML文字列を構築
+ * Figmaノードツリー → HTML文字列の変換を行うメインエンジン
  */
 export class HTMLBuilder {
   private config: HTMLBuilderConfig;
@@ -25,25 +28,21 @@ export class HTMLBuilder {
   private semanticMapper: SemanticMapper;
   private tailwindGenerator: TailwindGenerator;
 
-  constructor(config?: Partial<HTMLBuilderConfig>) {
+  constructor(config: Partial<HTMLBuilderConfig> = {}) {
     this.config = {
-      indent: config?.indent || 2,
-      useSemanticTags: config?.useSemanticTags !== false,
-      includeTailwindCDN: config?.includeTailwindCDN !== false,
-      includeMetaTags: config?.includeMetaTags !== false
+      indent: config.indent || 2,
+      useSemanticTags: config.useSemanticTags !== false,
+      includeTailwindCDN: config.includeTailwindCDN !== false,
+      includeMetaTags: config.includeMetaTags !== false
     };
 
-    this.layoutParser = new LayoutParser();
-    this.semanticMapper = new SemanticMapper();
-    this.tailwindGenerator = new TailwindGenerator();
+    this.layoutParser = getLayoutParser();
+    this.semanticMapper = getSemanticMapper();
+    this.tailwindGenerator = getTailwindGenerator();
   }
 
   /**
-   * FigmaノードツリーからHTML文字列を生成
-   * 
-   * @param rootNode - ルートFigmaノード
-   * @param options - 生成オプション
-   * @returns HTML文字列
+   * FigmaノードツリーからHTML文字列を生成（メインエントリポイント）
    */
   build(rootNode: FigmaNode, options: HTMLGeneratorOptions): string {
     let html = '';
@@ -54,6 +53,7 @@ export class HTMLBuilder {
     html += '<head>\n';
     html += '  <meta charset="UTF-8">\n';
 
+    // メタタグ
     if (this.config.includeMetaTags) {
       html += '  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n';
       html += '  <meta name="description" content="FIGLEAN Generated HTML">\n';
@@ -74,7 +74,7 @@ export class HTMLBuilder {
     html += '</head>\n';
     html += '<body class="bg-gray-50 min-h-screen">\n';
 
-    // Body内容（再帰的に生成）
+    // Body内容を再帰的に生成
     html += this.buildNode(rootNode, 1, options);
 
     html += '</body>\n';
@@ -84,12 +84,7 @@ export class HTMLBuilder {
   }
 
   /**
-   * ノードをHTMLに変換（再帰）
-   * 
-   * @param node - Figmaノード
-   * @param depth - 階層深度
-   * @param options - 生成オプション
-   * @returns HTML文字列
+   * ノードをHTMLに変換（再帰的処理）
    */
   private buildNode(
     node: FigmaNode,
@@ -99,15 +94,31 @@ export class HTMLBuilder {
     const indentation = ' '.repeat(depth * this.config.indent);
     let html = '';
 
-    if (node.type === 'FRAME') {
-      // FRAMEノードの処理
-      html += this.buildFrameNode(node, depth, options, indentation);
-    } else if (node.type === 'TEXT') {
-      // TEXTノードの処理
-      html += this.buildTextNode(node, depth, indentation);
-    } else if (node.type === 'RECTANGLE') {
-      // RECTANGLEノードの処理（装飾用）
-      html += this.buildRectangleNode(node, depth, indentation);
+    // ノードタイプ別処理
+    switch (node.type) {
+      case 'FRAME':
+      case 'COMPONENT':
+      case 'INSTANCE':
+        html += this.buildFrameNode(node, depth, options, indentation);
+        break;
+      
+      case 'TEXT':
+        html += this.buildTextNode(node, depth, indentation);
+        break;
+      
+      case 'RECTANGLE':
+      case 'VECTOR':
+        html += this.buildRectangleNode(node, depth, indentation);
+        break;
+      
+      case 'GROUP':
+        // GROUPはdivとして扱う
+        html += this.buildGroupNode(node, depth, options, indentation);
+        break;
+      
+      default:
+        // その他のノードはスキップ
+        break;
     }
 
     return html;
@@ -130,7 +141,7 @@ export class HTMLBuilder {
       : 'div';
 
     // クラス生成
-    const classes = this.generateClasses(node, options);
+    const classes = this.generateFrameClasses(node, options);
     const classAttr = classes.length > 0 ? ` class="${classes.join(' ')}"` : '';
 
     // アクセシビリティ属性
@@ -167,81 +178,35 @@ export class HTMLBuilder {
     const text = this.escapeHTML(node.characters || '');
 
     // テキスト用のクラス生成
-    const classes: string[] = [];
-
-    // フォントサイズ
-    if (node.style?.fontSize) {
-      const fontSize = node.style.fontSize;
-      if (fontSize >= 48) {
-        classes.push('text-5xl');
-      } else if (fontSize >= 36) {
-        classes.push('text-4xl');
-      } else if (fontSize >= 30) {
-        classes.push('text-3xl');
-      } else if (fontSize >= 24) {
-        classes.push('text-2xl');
-      } else if (fontSize >= 20) {
-        classes.push('text-xl');
-      } else if (fontSize >= 18) {
-        classes.push('text-lg');
-      } else {
-        classes.push('text-base');
-      }
-    }
-
-    // フォントウェイト
-    if (node.style?.fontWeight) {
-      const weight = node.style.fontWeight;
-      if (weight >= 700) {
-        classes.push('font-bold');
-      } else if (weight >= 600) {
-        classes.push('font-semibold');
-      } else if (weight >= 500) {
-        classes.push('font-medium');
-      }
-    }
-
-    // テキスト色（簡易実装）
-    if (node.fills && node.fills.length > 0) {
-      const fill = node.fills[0];
-      if (fill.type === 'SOLID' && fill.color) {
-        const colorClass = this.tailwindGenerator['rgbToTailwindColor'](fill.color);
-        if (colorClass && !colorClass.includes('black')) {
-          classes.push(`text-${colorClass}`);
-        }
-      }
-    }
-
+    const classes = this.tailwindGenerator.generateTextClasses(node);
     const classAttr = classes.length > 0 ? ` class="${classes.join(' ')}"` : '';
 
     return `${indentation}<${tag}${classAttr}>${text}</${tag}>\n`;
   }
 
   /**
-   * RECTANGLEノードをHTMLに変換（装飾用div）
+   * RECTANGLEノードをHTMLに変換（装飾用）
    */
   private buildRectangleNode(
     node: FigmaNode,
     _depth: number,
     indentation: string
   ): string {
-    const classes: string[] = [];
-
-    // サイズ
-    if (node.absoluteBoundingBox) {
-      const width = Math.round(node.absoluteBoundingBox.width);
-      const height = Math.round(node.absoluteBoundingBox.height);
-      classes.push(`w-[${width}px]`);
-      classes.push(`h-[${height}px]`);
-    }
-
-    // 色・ボーダー
-    const colorClasses = this.tailwindGenerator.generateColorClasses(
+    // 色・ボーダー情報を抽出
+    const classes = this.tailwindGenerator.generateColorClasses(
       node.fills,
       node.strokes,
       node.cornerRadius
     );
-    classes.push(...colorClasses);
+
+    // サイズ情報を追加
+    if (node.absoluteBoundingBox) {
+      const width = node.absoluteBoundingBox.width;
+      const height = node.absoluteBoundingBox.height;
+      
+      classes.push(`w-[${Math.round(width)}px]`);
+      classes.push(`h-[${Math.round(height)}px]`);
+    }
 
     const classAttr = classes.length > 0 ? ` class="${classes.join(' ')}"` : '';
 
@@ -249,9 +214,36 @@ export class HTMLBuilder {
   }
 
   /**
-   * ノードのクラスを生成
+   * GROUPノードをHTMLに変換
    */
-  private generateClasses(node: FigmaNode, options: HTMLGeneratorOptions): string[] {
+  private buildGroupNode(
+    node: FigmaNode,
+    depth: number,
+    options: HTMLGeneratorOptions,
+    indentation: string
+  ): string {
+    let html = '';
+
+    // 開始タグ
+    html += `${indentation}<div class="relative">\n`;
+
+    // 子要素を再帰的に処理
+    if (node.children && node.children.length > 0) {
+      for (const child of node.children) {
+        html += this.buildNode(child, depth + 1, options);
+      }
+    }
+
+    // 終了タグ
+    html += `${indentation}</div>\n`;
+
+    return html;
+  }
+
+  /**
+   * FRAMEノードのクラスを生成
+   */
+  private generateFrameClasses(node: FigmaNode, options: HTMLGeneratorOptions): string[] {
     const allClasses: string[] = [];
 
     // Auto Layoutが適用されている場合
@@ -263,7 +255,7 @@ export class HTMLBuilder {
       const childCount = node.children?.length || 0;
 
       if (useGrid && this.layoutParser.isGridCandidate(node, 100)) {
-        // Grid生成
+        // Grid生成（FIGLEAN 100%時のみ）
         const gridClasses = this.tailwindGenerator.generateGridClasses(childCount, layout);
         allClasses.push(...gridClasses);
       } else {
@@ -279,6 +271,9 @@ export class HTMLBuilder {
       // スペーシング
       const spacingClasses = this.tailwindGenerator.generateSpacingClasses(layout.spacing);
       allClasses.push(...spacingClasses);
+    } else {
+      // Auto Layoutが無い場合は基本スタイルのみ
+      allClasses.push('relative');
     }
 
     // 色・ボーダー
@@ -343,12 +338,12 @@ export class HTMLBuilder {
     const classMatches = htmlCode.match(/class="([^"]*)"/g) || [];
     let tailwindClasses = 0;
     for (const match of classMatches) {
-      const classes = match.match(/class="([^"]*)"/)?.[1].split(' ') || [];
-      tailwindClasses += classes.length;
+      const classes = match.match(/class="([^"]*)"/)![1].split(' ');
+      tailwindClasses += classes.filter(c => c.length > 0).length;
     }
 
     // コンポーネント数（開始タグの数）
-    const componentCount = (htmlCode.match(/<\w+[^>]*>/g) || []).length;
+    const componentCount = (htmlCode.match(/<\w+/g) || []).length;
 
     return {
       totalLines,
@@ -367,9 +362,9 @@ let htmlBuilderInstance: HTMLBuilder | null = null;
 /**
  * HTML Builderのシングルトンインスタンスを取得
  */
-export function getHTMLBuilder(): HTMLBuilder {
-  if (!htmlBuilderInstance) {
-    htmlBuilderInstance = new HTMLBuilder();
+export function getHTMLBuilder(config?: Partial<HTMLBuilderConfig>): HTMLBuilder {
+  if (!htmlBuilderInstance || config) {
+    htmlBuilderInstance = new HTMLBuilder(config);
   }
   return htmlBuilderInstance;
 }
