@@ -29,7 +29,7 @@ import logger from '../utils/logger';
 // =====================================
 
 const VALID_FRAMEWORKS = ['HTML_TAILWIND', 'REACT_JSX', 'VUE_SFC'] as const;
-const MIN_SCORE_FOR_HTML_GENERATION = 90;
+const MIN_SCORE_FOR_HTML_GENERATION = 60;
 const PERFECT_SCORE_FOR_GRID = 100;
 
 // =====================================

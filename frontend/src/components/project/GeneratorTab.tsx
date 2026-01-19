@@ -51,7 +51,8 @@ export default function GeneratorTab({ project }: GeneratorTabProps) {
   const [result, setResult] = useState<GenerateHTMLResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const canGenerate = project.figleanScore !== null && project.figleanScore >= 90;
+  // 🔄 変更: 90 → 60（テスト用に緩和）
+  const canGenerate = project.figleanScore !== null && project.figleanScore >= 60;
   const canUseGrid = project.figleanScore === 100;
 
   const handleGenerate = async () => {
@@ -155,10 +156,10 @@ export default function GeneratorTab({ project }: GeneratorTabProps) {
                     <span className="text-2xl">⚠️</span>
                     <div>
                       <h4 className="font-semibold text-yellow-800 mb-1">
-                        スコア90%未満
+                        スコア60%未満
                       </h4>
                       <p className="text-sm text-yellow-700">
-                        HTML生成機能を利用するには、FIGLEAN適合度90%以上が必要です。
+                        HTML生成機能を利用するには、FIGLEAN適合度60%以上が必要です。
                         現在: {project.figleanScore}%
                       </p>
                     </div>

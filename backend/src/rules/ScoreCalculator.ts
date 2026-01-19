@@ -2,6 +2,7 @@
 // backend/src/rules/ScoreCalculator.ts
 // スコア計算エンジン - FIGLEAN Phase 6.5
 // 作成日時: 2026年1月11日
+// 更新日時: 2026年1月19日 - HTML生成条件を60点以上に変更
 // 依存関係: types/rules
 // 説明: 違反情報からFIGLEAN適合度スコアを計算
 // =====================================
@@ -65,7 +66,8 @@ export class ScoreCalculator {
     const figleanScore = this.calculateOverallScore(categoryScores);
 
     // HTML生成可否を判定
-    const canGenerateHTML = figleanScore >= 90;
+    // 🔄 変更: 90 → 60（テスト用に緩和）
+    const canGenerateHTML = figleanScore >= 60;
     const canUseGrid = figleanScore === 100;
 
     // スコア結果を構築
@@ -153,7 +155,9 @@ export class ScoreCalculator {
     }
 
     // 加重平均を計算
-    const overallScore = totalWeight > 0 ? weightedSum / totalWeight : 0;
+    const overallScore = totalWeight > 0 
+      ? weightedSum / totalWeight 
+      : 0;
 
     return Math.round(overallScore);
   }
@@ -183,13 +187,13 @@ export class ScoreCalculator {
       return 'FIGLEAN適合度100%！Grid生成が可能です。';
     }
     if (score >= 90) {
-      return 'FIGLEAN適合度90%以上。HTML生成が可能です。';
+      return 'FIGLEAN適合度90%以上。高品質なHTML生成が可能です。';
     }
     if (score >= 75) {
-      return 'FIGLEAN適合度75%以上。基本的な生成は可能ですが、改善を推奨します。';
+      return 'FIGLEAN適合度75%以上。HTML生成が可能です。改善を推奨します。';
     }
     if (score >= 60) {
-      return 'FIGLEAN適合度60%以上。HTML生成は可能ですが、多くの改善が必要です。';
+      return 'FIGLEAN適合度60%以上。基本的なHTML生成が可能です。多くの改善が必要です。';
     }
     return 'FIGLEAN適合度60%未満。HTML生成の前に設計を改善してください。';
   }
