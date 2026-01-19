@@ -439,7 +439,7 @@ export async function deleteCommentFromFigma(
     throw new ExternalServiceError('Figmaトークンが設定されていません');
   }
 
-  const url = `${config.figmaApiBaseUrl}/v1/files/${fileKey}/comments/${commentId}`;
+  const url = `${config.figmaApiBaseUrl}/files/${fileKey}/comments/${commentId}`;
 
   try {
     const response = await fetch(url, {
@@ -449,15 +449,41 @@ export async function deleteCommentFromFigma(
       }
     });
 
+    // 404の場合は既に削除済みとして成功扱い
+    if (response.status === 404) {
+      logger.warn('⚠️ [SERVICE] コメントが見つかりません（既に削除済みの可能性）', { 
+        commentId, 
+        fileKey,
+        url 
+      });
+      return;
+    }
+
     if (!response.ok) {
+      const errorText = await response.text();
+      logger.error('❌ [SERVICE] Figmaコメント削除失敗', { 
+        status: response.status,
+        statusText: response.statusText,
+        errorText,
+        commentId,
+        fileKey,
+        url
+      });
       throw new ExternalServiceError(
         `Figmaコメント削除エラー: ${response.status}`
       );
     }
 
-    logger.info('✅ [SERVICE] Figmaコメント削除成功', { commentId });
+    logger.info('✅ [SERVICE] Figmaコメント削除成功', { commentId, fileKey });
   } catch (error: any) {
-    logger.error('❌ [SERVICE] Figmaコメント削除失敗', { error, commentId });
+    if (error instanceof ExternalServiceError) {
+      throw error;
+    }
+    logger.error('❌ [SERVICE] Figmaコメント削除失敗（予期しないエラー）', { 
+      error: error.message,
+      commentId,
+      fileKey
+    });
     throw new ExternalServiceError(
       error.message || 'Figmaコメント削除に失敗しました'
     );
