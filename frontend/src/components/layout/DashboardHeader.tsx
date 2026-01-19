@@ -19,6 +19,11 @@ export function DashboardHeader() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // ユーザー情報がない場合は何も表示しない
+  if (!user) {
+    return null;
+  }
+
   // メニュー外クリックで閉じる
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -103,10 +108,10 @@ export function DashboardHeader() {
               {/* ユーザー名 */}
               <div className="text-left hidden md:block">
                 <div className="text-sm font-medium text-gray-900">
-                  {user?.name || '管理者テストユーザー'}
+                  {user?.name}
                 </div>
                 <div className="text-xs text-gray-500">
-                  {user?.plan || '管理者'}
+                  {user?.plan}
                 </div>
               </div>
 
@@ -134,10 +139,10 @@ export function DashboardHeader() {
                 {/* ユーザー情報ヘッダー */}
                 <div className="px-4 py-3 border-b border-gray-100">
                   <div className="font-medium text-gray-900">
-                    {user?.name || '管理者テストユーザー'}
+                    {user?.name}
                   </div>
                   <div className="text-sm text-gray-500 truncate">
-                    {user?.email || 'admin@test.com'}
+                    {user?.email}
                   </div>
                 </div>
 

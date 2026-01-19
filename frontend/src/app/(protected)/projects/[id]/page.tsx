@@ -646,7 +646,6 @@ const loadTabData = async () => {
                         </h3>
                         <ul className="space-y-2 text-sm text-indigo-800">
                           <li>• 違反タブで詳細なルール違反を確認</li>
-                          <li>• 🔧 AutoFixで自動修正を実行して即座にスコア改善</li>
                           <li>• 崩壊予測タブで崩れリスクを把握</li>
                           <li>• 改善提案タブで改善提案を確認</li>
                           {analysisResult.canGenerateHTML && (
