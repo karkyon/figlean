@@ -263,9 +263,22 @@ const loadTabData = async () => {
       }
     } catch (error: any) {
       console.error('再解析エラー:', error);
-      const errorMessage = error.response?.data?.error?.message || '再解析に失敗しました';
+      
+      // レート制限エラー（429）の特別処理
+      const statusCode = error.response?.status;
+      let errorMessage = error.response?.data?.error?.message || '再解析に失敗しました';
+      
+      if (statusCode === 429 || errorMessage.includes('Rate limit') || errorMessage.includes('Too Many Requests')) {
+        errorMessage = `⚠️ Figma APIのレート制限に達しました\n\n` +
+          `Figma FreeアカウントはファイルAPIへのアクセスが月6回までに制限されています。\n\n` +
+          `解決策:\n` +
+          `1. 時間をおいて再実行（翌月1日にリセット）\n` +
+          `2. Figma Proプランにアップグレード\n` +
+          `3. ファイルを有料プランのワークスペースに移動`;
+      }
+      
       alert(errorMessage);
-      logger.error('再解析失敗', error, { projectId, errorMessage });
+      logger.error('再解析失敗', error, { projectId, errorMessage, statusCode });
     } finally {
       setIsReanalyzing(false);
     }
@@ -273,9 +286,16 @@ const loadTabData = async () => {
 
   // ✅ サーバー側でフィルタリング済みのため、クライアント側フィルタは不要
   // violations = APIから取得した、すでにフィルタリング済みのデータ
-  const totalPages = Math.ceil(violations.length / itemsPerPage);
+  const filteredViolations = violations.filter(v => {
+    if (severityFilter !== 'ALL' && v.severity !== severityFilter) return false;
+    if (commentPostedFilter === 'POSTED' && !v.commentPosted) return false;
+    if (commentPostedFilter === 'NOT_POSTED' && v.commentPosted) return false;
+    return true;
+  });
 
-  const paginatedViolations = violations.slice(
+  const totalPages = Math.ceil(filteredViolations.length / itemsPerPage);
+
+  const paginatedViolations = filteredViolations.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
@@ -428,13 +448,26 @@ const loadTabData = async () => {
                 >
                   🔗 Figmaで開く
                 </a>
-                <span>📊 最終解析: {analysisResult ? new Date(analysisResult.analyzedAt).toLocaleDateString('ja-JP') : '未解析'}</span>
-                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                  project.analysisStatus === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-                  project.analysisStatus === 'ANALYZING' ? 'bg-blue-100 text-blue-800' :
-                  project.analysisStatus === 'FAILED' ? 'bg-red-100 text-red-800' :
-                  'bg-gray-100 text-gray-800'
-                }`}>
+                <span>📊 最終解析: {analysisResult ? new Date(analysisResult.analyzedAt).toLocaleString('ja-JP', { 
+                  year: 'numeric', 
+                  month: '2-digit', 
+                  day: '2-digit', 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                }) : '未解析'}</span>
+                <span 
+                  className={`px-2 py-1 rounded text-xs font-medium ${
+                    project.analysisStatus === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                    project.analysisStatus === 'ANALYZING' ? 'bg-blue-100 text-blue-800' :
+                    project.analysisStatus === 'FAILED' ? 'bg-red-100 text-red-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}
+                  title={
+                    project.analysisStatus === 'FAILED' 
+                      ? '解析に失敗しました。Figma APIのレート制限に達している可能性があります。' 
+                      : undefined
+                  }
+                >
                   {project.analysisStatus === 'COMPLETED' ? '完了' :
                    project.analysisStatus === 'ANALYZING' ? '解析中' :
                    project.analysisStatus === 'FAILED' ? '失敗' : '未解析'}
@@ -732,8 +765,8 @@ const loadTabData = async () => {
                       {/* 表示情報 */}
                       <div className="text-sm text-gray-600">
                         全 {violationsTotal} 件中{' '}
-                        {violations.length > 0 
-                          ? `${Math.min((currentPage - 1) * itemsPerPage + 1, violations.length)} – ${Math.min(currentPage * itemsPerPage, violations.length)}`
+                        {filteredViolations.length > 0 
+                          ? `${Math.min((currentPage - 1) * itemsPerPage + 1, filteredViolations.length)} – ${Math.min(currentPage * itemsPerPage, filteredViolations.length)}`
                           : '0'
                         } 件を表示
                       </div>
