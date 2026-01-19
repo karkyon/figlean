@@ -6,7 +6,7 @@
 //   - Serviceレイヤーへの委譲
 //   - エラーハンドリング
 // 作成日: 2026-01-12
-// 更新日: 2026-01-19 - 型エラー修正
+// 更新日: 2026-01-19 - リアルなモックデータに修正
 // =====================================
 
 import { Request, Response, NextFunction } from 'express';
@@ -83,14 +83,276 @@ export async function generateHTMLController(
     // TODO: Figmaデータ取得
     // const figmaData = await getFigmaFileData(project.figmaFileKey, userId);
 
-    // 現時点ではモックデータで動作確認
+    // =====================================
+    // リアルなモックデータ（テスト用）
+    // =====================================
     const mockFigmaData: { document: FigmaNode } = {
       document: {
         id: '0:1',
         name: 'Page 1',
-        type: 'FRAME',  // 型安全なリテラル
+        type: 'FRAME',
         layoutMode: 'VERTICAL',
-        children: []
+        itemSpacing: 24,
+        paddingTop: 40,
+        paddingBottom: 40,
+        paddingLeft: 40,
+        paddingRight: 40,
+        layoutSizingHorizontal: 'FILL',
+        layoutSizingVertical: 'HUG',
+        primaryAxisAlignItems: 'MIN',
+        counterAxisAlignItems: 'CENTER',
+        children: [
+          // Header
+          {
+            id: '1:1',
+            name: 'Header',
+            type: 'FRAME',
+            layoutMode: 'HORIZONTAL',
+            itemSpacing: 16,
+            paddingTop: 16,
+            paddingBottom: 16,
+            paddingLeft: 24,
+            paddingRight: 24,
+            layoutSizingHorizontal: 'FILL',
+            layoutSizingVertical: 'HUG',
+            primaryAxisAlignItems: 'CENTER',
+            counterAxisAlignItems: 'CENTER',
+            fills: [{ type: 'SOLID', visible: true, color: { r: 1, g: 1, b: 1 } }],
+            children: [
+              {
+                id: '1:2',
+                name: 'Logo',
+                type: 'TEXT',
+                characters: 'FIGLEAN',
+                style: {
+                  fontSize: 24,
+                  fontWeight: 700,
+                  textAlignHorizontal: 'LEFT'
+                },
+                fills: [{ type: 'SOLID', visible: true, color: { r: 0.2, g: 0.3, b: 0.9 } }]
+              },
+              {
+                id: '1:3',
+                name: 'Nav',
+                type: 'FRAME',
+                layoutMode: 'HORIZONTAL',
+                itemSpacing: 24,
+                layoutSizingHorizontal: 'HUG',
+                layoutSizingVertical: 'HUG',
+                children: [
+                  {
+                    id: '1:4',
+                    name: 'Link1',
+                    type: 'TEXT',
+                    characters: 'Home',
+                    style: { fontSize: 16, fontWeight: 500 },
+                    fills: [{ type: 'SOLID', visible: true, color: { r: 0.3, g: 0.3, b: 0.3 } }]
+                  },
+                  {
+                    id: '1:5',
+                    name: 'Link2',
+                    type: 'TEXT',
+                    characters: 'Projects',
+                    style: { fontSize: 16, fontWeight: 500 },
+                    fills: [{ type: 'SOLID', visible: true, color: { r: 0.3, g: 0.3, b: 0.3 } }]
+                  },
+                  {
+                    id: '1:6',
+                    name: 'Link3',
+                    type: 'TEXT',
+                    characters: 'About',
+                    style: { fontSize: 16, fontWeight: 500 },
+                    fills: [{ type: 'SOLID', visible: true, color: { r: 0.3, g: 0.3, b: 0.3 } }]
+                  }
+                ]
+              }
+            ]
+          },
+          // Main Content
+          {
+            id: '2:1',
+            name: 'Main Content',
+            type: 'FRAME',
+            layoutMode: 'VERTICAL',
+            itemSpacing: 32,
+            paddingTop: 48,
+            paddingBottom: 48,
+            paddingLeft: 24,
+            paddingRight: 24,
+            layoutSizingHorizontal: 'FILL',
+            layoutSizingVertical: 'HUG',
+            children: [
+              {
+                id: '2:2',
+                name: 'Hero Title',
+                type: 'TEXT',
+                characters: 'Welcome to FIGLEAN',
+                style: {
+                  fontSize: 48,
+                  fontWeight: 700,
+                  textAlignHorizontal: 'CENTER'
+                },
+                fills: [{ type: 'SOLID', visible: true, color: { r: 0.1, g: 0.1, b: 0.1 } }]
+              },
+              {
+                id: '2:3',
+                name: 'Hero Description',
+                type: 'TEXT',
+                characters: 'Transform your Figma designs into production-ready HTML with Tailwind CSS',
+                style: {
+                  fontSize: 20,
+                  fontWeight: 400,
+                  textAlignHorizontal: 'CENTER'
+                },
+                fills: [{ type: 'SOLID', visible: true, color: { r: 0.4, g: 0.4, b: 0.4 } }]
+              },
+              // Cards Section
+              {
+                id: '2:4',
+                name: 'Cards',
+                type: 'FRAME',
+                layoutMode: 'HORIZONTAL',
+                layoutWrap: 'WRAP',
+                itemSpacing: 24,
+                layoutSizingHorizontal: 'FILL',
+                layoutSizingVertical: 'HUG',
+                children: [
+                  {
+                    id: '2:5',
+                    name: 'Card 1',
+                    type: 'FRAME',
+                    layoutMode: 'VERTICAL',
+                    itemSpacing: 16,
+                    paddingTop: 24,
+                    paddingBottom: 24,
+                    paddingLeft: 24,
+                    paddingRight: 24,
+                    layoutSizingHorizontal: 'FIXED',
+                    layoutSizingVertical: 'HUG',
+                    absoluteBoundingBox: { x: 0, y: 0, width: 300, height: 200 },
+                    fills: [{ type: 'SOLID', visible: true, color: { r: 1, g: 1, b: 1 } }],
+                    cornerRadius: 8,
+                    children: [
+                      {
+                        id: '2:6',
+                        name: 'Card Title',
+                        type: 'TEXT',
+                        characters: 'Auto Layout Analysis',
+                        style: { fontSize: 24, fontWeight: 600 },
+                        fills: [{ type: 'SOLID', visible: true, color: { r: 0.1, g: 0.1, b: 0.1 } }]
+                      },
+                      {
+                        id: '2:7',
+                        name: 'Card Description',
+                        type: 'TEXT',
+                        characters: 'Comprehensive analysis of your Figma Auto Layout settings',
+                        style: { fontSize: 16, fontWeight: 400 },
+                        fills: [{ type: 'SOLID', visible: true, color: { r: 0.5, g: 0.5, b: 0.5 } }]
+                      }
+                    ]
+                  },
+                  {
+                    id: '2:8',
+                    name: 'Card 2',
+                    type: 'FRAME',
+                    layoutMode: 'VERTICAL',
+                    itemSpacing: 16,
+                    paddingTop: 24,
+                    paddingBottom: 24,
+                    paddingLeft: 24,
+                    paddingRight: 24,
+                    layoutSizingHorizontal: 'FIXED',
+                    layoutSizingVertical: 'HUG',
+                    absoluteBoundingBox: { x: 0, y: 0, width: 300, height: 200 },
+                    fills: [{ type: 'SOLID', visible: true, color: { r: 1, g: 1, b: 1 } }],
+                    cornerRadius: 8,
+                    children: [
+                      {
+                        id: '2:9',
+                        name: 'Card Title',
+                        type: 'TEXT',
+                        characters: 'HTML Generation',
+                        style: { fontSize: 24, fontWeight: 600 },
+                        fills: [{ type: 'SOLID', visible: true, color: { r: 0.1, g: 0.1, b: 0.1 } }]
+                      },
+                      {
+                        id: '2:10',
+                        name: 'Card Description',
+                        type: 'TEXT',
+                        characters: 'Generate production-ready HTML with Tailwind CSS',
+                        style: { fontSize: 16, fontWeight: 400 },
+                        fills: [{ type: 'SOLID', visible: true, color: { r: 0.5, g: 0.5, b: 0.5 } }]
+                      }
+                    ]
+                  },
+                  {
+                    id: '2:11',
+                    name: 'Card 3',
+                    type: 'FRAME',
+                    layoutMode: 'VERTICAL',
+                    itemSpacing: 16,
+                    paddingTop: 24,
+                    paddingBottom: 24,
+                    paddingLeft: 24,
+                    paddingRight: 24,
+                    layoutSizingHorizontal: 'FIXED',
+                    layoutSizingVertical: 'HUG',
+                    absoluteBoundingBox: { x: 0, y: 0, width: 300, height: 200 },
+                    fills: [{ type: 'SOLID', visible: true, color: { r: 1, g: 1, b: 1 } }],
+                    cornerRadius: 8,
+                    children: [
+                      {
+                        id: '2:12',
+                        name: 'Card Title',
+                        type: 'TEXT',
+                        characters: 'Responsive Design',
+                        style: { fontSize: 24, fontWeight: 600 },
+                        fills: [{ type: 'SOLID', visible: true, color: { r: 0.1, g: 0.1, b: 0.1 } }]
+                      },
+                      {
+                        id: '2:13',
+                        name: 'Card Description',
+                        type: 'TEXT',
+                        characters: 'Mobile-first responsive design with Tailwind breakpoints',
+                        style: { fontSize: 16, fontWeight: 400 },
+                        fills: [{ type: 'SOLID', visible: true, color: { r: 0.5, g: 0.5, b: 0.5 } }]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          // Footer
+          {
+            id: '3:1',
+            name: 'Footer',
+            type: 'FRAME',
+            layoutMode: 'VERTICAL',
+            itemSpacing: 16,
+            paddingTop: 32,
+            paddingBottom: 32,
+            paddingLeft: 24,
+            paddingRight: 24,
+            layoutSizingHorizontal: 'FILL',
+            layoutSizingVertical: 'HUG',
+            fills: [{ type: 'SOLID', visible: true, color: { r: 0.95, g: 0.95, b: 0.95 } }],
+            children: [
+              {
+                id: '3:2',
+                name: 'Copyright',
+                type: 'TEXT',
+                characters: '© 2026 FIGLEAN. All rights reserved.',
+                style: {
+                  fontSize: 14,
+                  fontWeight: 400,
+                  textAlignHorizontal: 'CENTER'
+                },
+                fills: [{ type: 'SOLID', visible: true, color: { r: 0.5, g: 0.5, b: 0.5 } }]
+              }
+            ]
+          }
+        ]
       }
     };
     const mockScore = 95;
