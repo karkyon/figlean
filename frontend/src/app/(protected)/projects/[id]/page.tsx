@@ -14,7 +14,7 @@
  * - エラーハンドリング
  * 
  * 作成日: 2026年1月13日
- * 更新日: 2026年1月17日 - DashboardHeader追加、背景色統一、タブバッジ初期表示
+ * 更新日: 2026年1月19日 - フィルタ不具合修正（クライアント側二重フィルタリング削除、useEffect追加）
  * 依存関係: @/components/layout/DashboardHeader, @/components/ui/Button, @/components/analysis/*, @/components/autofix/*, @/lib/api/client
  */
 
@@ -116,6 +116,17 @@ export default function ProjectDetailPage() {
       loadTabData();
     }
   }, [activeTab]);
+
+  // 🆕 フィルタ変更時にデータを再読み込み
+  useEffect(() => {
+    if (activeTab === 'violations' && projectId) {
+      logger.info('フィルタ変更検知 - データ再読み込み', { 
+        severityFilter, 
+        commentPostedFilter 
+      });
+      loadTabData();
+    }
+  }, [severityFilter, commentPostedFilter]);
 
   const loadProject = async () => {
     try {
@@ -260,16 +271,11 @@ const loadTabData = async () => {
     }
   };
 
-  const filteredViolations = violations.filter(v => {
-    if (severityFilter !== 'ALL' && v.severity !== severityFilter) return false;
-    if (commentPostedFilter === 'POSTED' && !v.commentPosted) return false;
-    if (commentPostedFilter === 'NOT_POSTED' && v.commentPosted) return false;
-    return true;
-  });
+  // ✅ サーバー側でフィルタリング済みのため、クライアント側フィルタは不要
+  // violations = APIから取得した、すでにフィルタリング済みのデータ
+  const totalPages = Math.ceil(violations.length / itemsPerPage);
 
-  const totalPages = Math.ceil(filteredViolations.length / itemsPerPage);
-
-  const paginatedViolations = filteredViolations.slice(
+  const paginatedViolations = violations.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
@@ -675,7 +681,7 @@ const loadTabData = async () => {
                             onChange={(e) => {
                               setSeverityFilter(e.target.value as any);
                               setCurrentPage(1);
-                              loadTabData(); // ← 追加
+                              // loadTabData()はuseEffectで自動的に呼ばれる
                             }}
                             className="border rounded-lg px-3 py-2"
                           >
@@ -694,7 +700,7 @@ const loadTabData = async () => {
                             onChange={(e) => {
                               setCommentPostedFilter(e.target.value as any);
                               setCurrentPage(1);
-                              loadTabData(); // ← 追加
+                              // loadTabData()はuseEffectで自動的に呼ばれる
                             }}
                             className="border rounded-lg px-3 py-2"
                           >
@@ -727,8 +733,8 @@ const loadTabData = async () => {
                       {/* 表示情報 */}
                       <div className="text-sm text-gray-600">
                         全 {violationsTotal} 件中{' '}
-                        {filteredViolations.length > 0 
-                          ? `${Math.min((currentPage - 1) * itemsPerPage + 1, filteredViolations.length)} – ${Math.min(currentPage * itemsPerPage, filteredViolations.length)}`
+                        {violations.length > 0 
+                          ? `${Math.min((currentPage - 1) * itemsPerPage + 1, violations.length)} – ${Math.min(currentPage * itemsPerPage, violations.length)}`
                           : '0'
                         } 件を表示
                       </div>
