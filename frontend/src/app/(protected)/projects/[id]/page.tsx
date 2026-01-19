@@ -165,25 +165,46 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const loadTabData = async () => {
-    if (!projectId) return;
+const loadTabData = async () => {
+  if (!projectId) return;
 
-    try {
-      logger.info(`タブデータ読み込み開始: ${activeTab}`, { projectId, activeTab });
-      setIsLoadingTab(true);
+  try {
+    logger.info(`タブデータ読み込み開始: ${activeTab}`, { projectId, activeTab });
+    setIsLoadingTab(true);
 
-      if (activeTab === 'violations') {
-        logger.api('GET', `/analysis/${projectId}/violations`);
-        const response = await apiClient.get(`/analysis/${projectId}/violations`);
-        
-        setViolations(response.data.data.violations || []);
-        setViolationsTotal(response.data.data.total || 0);
-        
-        logger.apiSuccess('GET', `/analysis/${projectId}/violations`, { 
-          count: response.data.data.violations?.length || 0,
-          total: response.data.data.total || 0
-        });
-      } else if (activeTab === 'predictions') {
+    if (activeTab === 'violations') {
+      // クエリパラメータを構築
+      const params = new URLSearchParams();
+      
+      // 重要度フィルタ
+      if (severityFilter !== 'ALL') {
+        params.append('severity', severityFilter);
+      }
+      
+      // コメント投稿状態フィルタ
+      if (commentPostedFilter === 'POSTED') {
+        params.append('commentPosted', 'true');
+      } else if (commentPostedFilter === 'NOT_POSTED') {
+        params.append('commentPosted', 'false');
+      }
+      
+      // ページング（必要に応じて）
+      params.append('limit', '1000'); // 全件取得（フロントエンドでページング）
+      
+      const queryString = params.toString();
+      const url = `/analysis/${projectId}/violations${queryString ? `?${queryString}` : ''}`;
+      
+      logger.api('GET', url);
+      const response = await apiClient.get(url);
+      
+      setViolations(response.data.data.violations || []);
+      setViolationsTotal(response.data.data.total || 0);
+      
+      logger.apiSuccess('GET', url, { 
+        count: response.data.data.violations?.length || 0,
+        total: response.data.data.total || 0
+      });
+    } else if (activeTab === 'predictions') {
         logger.api('GET', `/analysis/${projectId}/predictions`);
         const response = await apiClient.get(`/analysis/${projectId}/predictions`);
         setPredictions(response.data.data.predictions || []);
@@ -661,6 +682,7 @@ export default function ProjectDetailPage() {
                             onChange={(e) => {
                               setSeverityFilter(e.target.value as any);
                               setCurrentPage(1);
+                              loadTabData(); // ← 追加
                             }}
                             className="border rounded-lg px-3 py-2"
                           >
@@ -679,6 +701,7 @@ export default function ProjectDetailPage() {
                             onChange={(e) => {
                               setCommentPostedFilter(e.target.value as any);
                               setCurrentPage(1);
+                              loadTabData(); // ← 追加
                             }}
                             className="border rounded-lg px-3 py-2"
                           >
