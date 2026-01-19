@@ -1,20 +1,18 @@
 // =====================================
 // ファイルパス: frontend/src/components/analysis/ViolationActionButtons.tsx
 // 概要: Violation用アクションボタン群
-// 機能説明: AutoFixボタンとFigmaコメントボタンをスタイリッシュに配置
+// 機能説明: Figmaコメントボタンを配置
 // 作成日: 2026-01-17
-// 更新日: 2026-01-17 - Figma確認ボタンをaタグに修正（元の動作するコードに戻す）
+// 更新日: 2026-01-19 - AutoFix機能削除
 // 依存関係: @/components/ui/Button, @/lib/api/*
 // =====================================
 
 'use client';
 
 import { useState } from 'react';
-import { executeIndividualAutoFix } from '@/lib/api/autofix';
 import apiClient from '@/lib/api/client';
 import { logger } from '@/lib/logger';
 import type { Violation, Project } from '@/types/models';
-import { AutoFixStatus } from '@/types/autofix';
 
 interface ViolationActionButtonsProps {
   violation: Violation;
@@ -31,54 +29,11 @@ export function ViolationActionButtons({
   onSuccess,
   onError,
 }: ViolationActionButtonsProps) {
-  const [isAutoFixing, setIsAutoFixing] = useState(false);
   const [isPostingComment, setIsPostingComment] = useState(false);
 
-  // AutoFix個別実行
-  const handleAutoFix = async () => {
-    setIsAutoFixing(true);
-
-    try {
-      logger.info('[ViolationActionButtons] AutoFix実行開始', {
-        projectId,
-        violationId: violation.id,
-      });
-
-      const result = await executeIndividualAutoFix(projectId, violation.id, false);
-
-      logger.info('[ViolationActionButtons] AutoFix実行成功', { result });
-
-      // ★修正: シンプルな条件分岐
-      if (result.successCount > 0) {
-        // 成功がある場合
-        logger.info('[ViolationActionButtons] AutoFix成功', { 
-          successCount: result.successCount,
-          failedCount: result.failedCount 
-        });
-        
-        onSuccess?.();
-      } else {
-        // 成功が0件の場合は失敗
-        const failedItem = result.items?.[0];
-        const errorMsg = failedItem?.errorMessage || 
-                        failedItem?.error || 
-                        'Figma APIでノードが見つかりませんでした（404 Not found）';
-        
-        logger.error('[ViolationActionButtons] AutoFix失敗', { 
-          failedCount: result.failedCount,
-          errorMsg,
-          items: result.items 
-        });
-        
-        onError?.(errorMsg);
-      }
-    } catch (error: any) {
-      logger.error('[ViolationActionButtons] AutoFix実行エラー', { error });
-      onError?.(error.message || '修正に失敗しました');
-    } finally {
-      setIsAutoFixing(false);
-    }
-  };
+  // ▼ AutoFix関連のstateと関数を削除
+  // const [isAutoFixing, setIsAutoFixing] = useState(false);
+  // const handleAutoFix = async () => { ... }
 
   // Figmaコメント投稿
   const handlePostComment = async () => {
@@ -108,24 +63,7 @@ export function ViolationActionButtons({
 
   return (
     <div className="flex items-center gap-2">
-      {/* AutoFixボタン */}
-      <button
-        onClick={handleAutoFix}
-        disabled={isAutoFixing}
-        className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
-      >
-        {isAutoFixing ? (
-          <>
-            <span className="animate-spin">⚙️</span>
-            <span>修正中...</span>
-          </>
-        ) : (
-          <>
-            <span>🔧</span>
-            <span>AutoFix</span>
-          </>
-        )}
-      </button>
+      {/* ▼ AutoFixボタンを削除 */}
 
       {/* Figmaコメント投稿/確認ボタン */}
       {violation.commentPosted ? (

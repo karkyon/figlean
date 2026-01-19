@@ -5,7 +5,7 @@
  * 機能:
  * - プロジェクト基本情報表示
  * - FIGLEAN適合度スコア表示
- * - タブナビゲーション（概要 / 違反 / 崩壊予測 / 改善提案 / 生成 / AutoFix履歴）
+ * - タブナビゲーション（概要 / 違反 / 崩壊予測 / 改善提案 / 生成）
  * - 診断結果カード表示
  * - HTML生成機能（Generator Tab）
  * - Figmaコメント一括投稿機能
@@ -28,12 +28,14 @@ import { ViolationActionButtons } from '@/components/analysis/ViolationActionBut
 import { PredictionCard } from '@/components/analysis/PredictionCard';
 import { SuggestionCard } from '@/components/analysis/SuggestionCard';
 import GeneratorTab from '@/components/project/GeneratorTab';
-import { AutoFixPreviewModal } from '@/components/autofix/AutoFixPreviewModal';
-import { AutoFixHistoryPanel } from '@/components/autofix/AutoFixHistoryPanel';
 import { Project, Violation, Prediction, Suggestion } from '@/types/models';
-import type { AutoFixExecuteResponse } from '@/types/autofix';
 import apiClient from '@/lib/api/client';
 import { logger } from '@/lib/logger';
+
+// AutoFixコンポーネント(AutoFixはRESTAPIで実装不可であるためコメントアウト)
+// import { AutoFixPreviewModal } from '@/components/autofix/AutoFixPreviewModal';
+// import { AutoFixHistoryPanel } from '@/components/autofix/AutoFixHistoryPanel';
+// import type { AutoFixExecuteResponse } from '@/types/autofix';
 
 // =====================================
 // ローカル型定義（API専用）
@@ -58,7 +60,7 @@ interface AnalysisResult {
   suggestionsCount?: number;
 }
 
-type Tab = 'overview' | 'violations' | 'predictions' | 'suggestions' | 'generator' | 'autofix';
+type Tab = 'overview' | 'violations' | 'predictions' | 'suggestions' | 'generator' ;
 
 // =====================================
 // メインコンポーネント
@@ -93,10 +95,10 @@ export default function ProjectDetailPage() {
   const [itemsPerPage, setItemsPerPage] = useState<number>(20);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // AutoFix状態
-  const [selectedViolationIds, setSelectedViolationIds] = useState<string[]>([]);
-  const [isAutoFixModalOpen, setIsAutoFixModalOpen] = useState(false);
-  const [autoFixDeleteComments, setAutoFixDeleteComments] = useState(false);
+  // AutoFix状態(AutoFixはRESTAPIで実装不可であるためコメントアウト)
+  // const [selectedViolationIds, setSelectedViolationIds] = useState<string[]>([]);
+  // const [isAutoFixModalOpen, setIsAutoFixModalOpen] = useState(false);
+  // const [autoFixDeleteComments, setAutoFixDeleteComments] = useState(false);
 
   // 詳細開閉状態
   const [openDetailIds, setOpenDetailIds] = useState<Set<string>>(new Set());
@@ -110,7 +112,7 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     logger.component('ProjectDetailPage', `Tab Changed: ${activeTab}`, { projectId, activeTab });
-    if (activeTab !== 'overview' && activeTab !== 'generator' && activeTab !== 'autofix') {
+    if (activeTab !== 'overview' && activeTab !== 'generator') {
       loadTabData();
     }
   }, [activeTab]);
@@ -245,7 +247,7 @@ const loadTabData = async () => {
       logger.success('再解析完了', { projectId });
 
       await loadProject();
-      if (activeTab !== 'overview' && activeTab !== 'generator' && activeTab !== 'autofix') {
+      if (activeTab !== 'overview' && activeTab !== 'generator') {
         await loadTabData();
       }
     } catch (error: any) {
@@ -305,57 +307,58 @@ const loadTabData = async () => {
     }
   };
 
+  // AutoFix機能はRESTAPIで実装不可であるためコメントアウト
   // AutoFix: 違反選択トグル
-  const handleToggleViolationSelect = (violationId: string) => {
-    setSelectedViolationIds(prev => {
-      if (prev.includes(violationId)) {
-        return prev.filter(id => id !== violationId);
-      } else {
-        return [...prev, violationId];
-      }
-    });
-  };
+  // const handleToggleViolationSelect = (violationId: string) => {
+  //   setSelectedViolationIds(prev => {
+  //     if (prev.includes(violationId)) {
+  //       return prev.filter(id => id !== violationId);
+  //     } else {
+  //       return [...prev, violationId];
+  //     }
+  //   });
+  // };
 
   // AutoFix: 全選択/全解除
-  const handleToggleSelectAll = () => {
-    if (selectedViolationIds.length === paginatedViolations.length) {
-      setSelectedViolationIds([]);
-    } else {
-      setSelectedViolationIds(paginatedViolations.map(v => v.id));
-    }
-  };
+  // const handleToggleSelectAll = () => {
+  //   if (selectedViolationIds.length === paginatedViolations.length) {
+  //     setSelectedViolationIds([]);
+  //   } else {
+  //     setSelectedViolationIds(paginatedViolations.map(v => v.id));
+  //   }
+  // };
 
   // AutoFix: 一括修正実行
-  const handleBulkAutoFix = () => {
-    if (selectedViolationIds.length === 0) {
-      alert('修正する違反を選択してください');
-      return;
-    }
-    setIsAutoFixModalOpen(true);
-  };
+  // const handleBulkAutoFix = () => {
+  //   if (selectedViolationIds.length === 0) {
+  //     alert('修正する違反を選択してください');
+  //     return;
+  //   }
+  //   setIsAutoFixModalOpen(true);
+  // };
 
   // AutoFix: 修正成功時
-  const handleAutoFixSuccess = async (result: AutoFixExecuteResponse) => {
-    logger.success('AutoFix修正完了', { 
-      historyId: result.historyId,
-      successCount: result.successCount,
-      failedCount: result.failedCount,
-    });
+  // const handleAutoFixSuccess = async (result: AutoFixExecuteResponse) => {
+  //   logger.success('AutoFix修正完了', { 
+  //     historyId: result.historyId,
+  //     successCount: result.successCount,
+  //     failedCount: result.failedCount,
+  //   });
 
-    alert(`🔧 AutoFix完了\n\n成功: ${result.successCount}件\n失敗: ${result.failedCount}件`);
+  //   alert(`🔧 AutoFix完了\n\n成功: ${result.successCount}件\n失敗: ${result.failedCount}件`);
 
-    // 違反リストとプロジェクト情報を再読み込み
-    await loadProject();
-    await loadTabData();
+  //   // 違反リストとプロジェクト情報を再読み込み
+  //   await loadProject();
+  //   await loadTabData();
 
-    // 選択状態をリセット
-    setSelectedViolationIds([]);
-  };
+  //   // 選択状態をリセット
+  //   setSelectedViolationIds([]);
+  // };
 
-  // AutoFix: エラー時
-  const handleAutoFixError = (error: string) => {
-    logger.error('AutoFix修正エラー', new Error(error), { projectId });
-    alert(`❌ AutoFix失敗\n\n${error}`);
+  // 違反アクションのエラーハンドリング
+  const handleViolationError = (error: string) => {
+    logger.error('違反アクション実行エラー', new Error(error), { projectId });
+    alert(`❌ エラー\n\n${error}`);
   };
 
   if (isLoading) {
@@ -564,16 +567,6 @@ const loadTabData = async () => {
             >
               🎨 生成
             </button>
-            <button
-              onClick={() => setActiveTab('autofix')}
-              className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
-                activeTab === 'autofix'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              🔧 AutoFix履歴
-            </button>
           </nav>
         </div>
 
@@ -747,33 +740,6 @@ const loadTabData = async () => {
                     <div className="flex items-center gap-4">
                       <h2 className="text-2xl font-bold">ルール違反一覧</h2>
 
-                      {/* 全選択チェックボックス */}
-                      {paginatedViolations.length > 0 && (
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectedViolationIds.length === paginatedViolations.length && paginatedViolations.length > 0}
-                            onChange={handleToggleSelectAll}
-                            className="w-4 h-4 rounded border-gray-300"
-                          />
-                          <span className="text-sm text-gray-600">
-                            全選択 ({selectedViolationIds.length}件)
-                          </span>
-                        </label>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      {/* AutoFix一括修正ボタン */}
-                      {selectedViolationIds.length > 0 && (
-                        <button
-                          onClick={handleBulkAutoFix}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-                        >
-                          🔧 AutoFix ({selectedViolationIds.length}件)
-                        </button>
-                      )}
-
                       {/* Figmaコメント一括投稿 */}
                       <button
                         onClick={handleBulkPostComments}
@@ -809,12 +775,6 @@ const loadTabData = async () => {
                             <div className="flex items-start justify-between gap-4 mb-3">
                               {/* 左: チェックボックス + タイトル */}
                               <div className="flex items-start gap-3 flex-1">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedViolationIds.includes(v.id)}
-                                  onChange={() => handleToggleViolationSelect(v.id)}
-                                  className="mt-1 w-4 h-4 rounded border-gray-300 cursor-pointer"
-                                />
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2 mb-1">
                                     <span className={`px-2 py-0.5 text-xs font-medium rounded ${
@@ -847,7 +807,7 @@ const loadTabData = async () => {
                                     await loadProject();
                                     await loadTabData();
                                   }}
-                                  onError={handleAutoFixError}
+                                  onError={handleViolationError}
                                 />
                                 <button
                                   onClick={toggleDetail}
@@ -1036,36 +996,10 @@ const loadTabData = async () => {
 
               {/* Generator タブ */}
               {activeTab === 'generator' && <GeneratorTab project={project} />}
-
-              {/* AutoFix履歴タブ */}
-              {activeTab === 'autofix' && (
-                <AutoFixHistoryPanel
-                  projectId={projectId}
-                  onRollbackSuccess={async () => {
-                    await loadProject();
-                    // 違反データを再読み込み（違反タブに戻った時のため）
-                    const currentTab = activeTab;
-                    setActiveTab('violations');
-                    await loadTabData();
-                    setActiveTab(currentTab);
-                  }}
-                />
-              )}
             </>
           )}
         </div>
       </main>
-
-      {/* AutoFixプレビューモーダル */}
-      <AutoFixPreviewModal
-        projectId={projectId}
-        violationIds={selectedViolationIds}
-        isOpen={isAutoFixModalOpen}
-        onClose={() => setIsAutoFixModalOpen(false)}
-        onSuccess={handleAutoFixSuccess}
-        onError={handleAutoFixError}
-        deleteComments={autoFixDeleteComments}
-      />
     </div>
   );
 }
