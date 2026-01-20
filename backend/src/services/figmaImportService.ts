@@ -154,7 +154,7 @@ async function executeImportJob(
       'Saving results'
     );
 
-    await saveAnalysisResult(request.projectId, analysisResult);
+    await saveAnalysisResult(request.projectId, analysisResult, fileDetail);
 
     await updateProjectStatus(request.projectId, 'COMPLETED');
     await updateProjectScores(request.projectId, analysisResult);
@@ -255,7 +255,8 @@ function mapSeverityToPrisma(severity: string): PrismaSeverity {
 
 async function saveAnalysisResult(
   projectId: string,
-  summary: AnalysisResultSummary
+  summary: AnalysisResultSummary,
+  fileDetail: figmaApiService.FigmaFileDetail
 ): Promise<void> {
   logger.info('解析結果保存開始', { projectId });
 
@@ -312,7 +313,9 @@ async function saveAnalysisResult(
       mobileReady: false,
       tabletReady: false,
       desktopReady: true,
-      analysisTimeMs: 0
+      analysisTimeMs: 0,
+      // ★ 追加: FigmaデータをJSON形式で保存
+      rawFigmaData: fileDetail as any
     }
   });
 
@@ -320,6 +323,54 @@ async function saveAnalysisResult(
     analysisResultId: analysisResult.id,
     figleanScore: analysisResult.figleanScore
   });
+
+  // ★★★ ここから追加データ検証用のSQL ★★★
+  // rawFigmaData確認用SQL（開発環境のみ）
+  logger.info('='.repeat(80));
+  logger.info('📊 [DEBUG] rawFigmaData保存確認SQL:');
+  logger.info('='.repeat(80));
+  logger.info(`
+    -- rawFigmaDataが保存されたか確認
+    SELECT 
+      id,
+      project_id,
+      figlean_score,
+      html_generatable,
+      CASE 
+        WHEN raw_figma_data IS NULL THEN '❌ NULL'
+        WHEN raw_figma_data::text = 'null' THEN '❌ JSON null'
+        ELSE '✅ データあり (' || LENGTH(raw_figma_data::text) || ' bytes)'
+      END as raw_figma_data_status,
+      created_at
+    FROM analysis_results
+    WHERE project_id = '${projectId}'
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    -- rawFigmaDataの詳細を確認（最初の500文字のみ）
+    SELECT 
+      id,
+      LEFT(raw_figma_data::text, 500) as raw_figma_data_preview
+    FROM analysis_results
+    WHERE project_id = '${projectId}'
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    -- Figmaファイル情報を確認
+    SELECT 
+      raw_figma_data->'name' as figma_file_name,
+      raw_figma_data->'version' as figma_version,
+      raw_figma_data->'lastModified' as last_modified,
+      jsonb_typeof(raw_figma_data->'document') as document_type,
+      jsonb_typeof(raw_figma_data->'components') as components_type
+    FROM analysis_results
+    WHERE project_id = '${projectId}'
+      AND raw_figma_data IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT 1;
+  `);
+  logger.info('='.repeat(80));
+  // ★★★ ここまで追加データ検証用のSQL ★★★
 
   // =====================================
   // ルール違反保存
