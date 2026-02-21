@@ -16,6 +16,7 @@ import { useAuthStore } from '@/store/authStore';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { logger } from '@/lib/logger';
 
 interface FigmaSettingsModalProps {
   isOpen: boolean;
@@ -60,17 +61,14 @@ export function FigmaSettingsModal({
     setMessage(null);
 
     try {
-      await saveFigmaToken(token);
-      setMessage({ type: 'success', text: 'Figmaトークンを保存しました' });
+      await saveFigmaToken(token);  // ← これで内部的にrefreshUser()が呼ばれる
       setToken('');
-      await refreshUser();
       
+      // ★ 修正: 成功後すぐにコールバックとモーダルを閉じる
       if (onSuccess) {
-        setTimeout(() => {
-          onSuccess();
-          onClose();
-        }, 1000);
+        onSuccess();
       }
+      onClose();
     } catch (error: any) {
       setMessage({ 
         type: 'error', 

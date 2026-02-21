@@ -144,6 +144,8 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null });
         try {
           await authApi.saveFigmaToken(token);
+          // ★ 修正: refreshUser()の前にisLoading: falseに戻す
+          set({ isLoading: false });
           // ユーザー情報を更新
           await get().refreshUser();
         } catch (error: any) {
@@ -161,6 +163,8 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null });
         try {
           await authApi.deleteFigmaToken();
+          // ★ 修正: refreshUser()の前にisLoading: falseに戻す
+          set({ isLoading: false });
           // ユーザー情報を更新
           await get().refreshUser();
         } catch (error: any) {
